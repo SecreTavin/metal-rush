@@ -21,6 +21,24 @@ Abra http://localhost:5173. Use `?debug` na URL para ver as caixas de colisão.
 | Pular | K / X / Espaço |
 | Pendrive EMP (granada) | L / C |
 
+## Missões
+
+| # | Missão | Ambiente |
+|---|---|---|
+| 1 | **Ruínas de Neo-SP** | Metrópole em ruínas à noite: chuva, relâmpagos, neon, Torre da IA, monotrilho, carros voadores, holofotes e drones |
+| 2 | **Fábrica de Sintéticos** | Galpão onde os robôs são fabricados: linha de montagem, fornalhas, engrenagens, ponte rolante, solda e metal derretido |
+| 3 | **Núcleo da IA** | O coração digital: o Olho gigante que segue o jogador, torres de servidores, chuva de dados e interferências |
+
+Ao terminar uma missão, ENTER leva à próxima (pontos e vidas continuam). No menu, as teclas **1**, **2** e **3** escolhem a missão.
+
+### Elementos dinâmicos das fases
+
+- **Plataformas**: móveis (elevadores, carga suspensa), que desabam ao pisar e de luz sólida que aparecem e somem
+- **Perigos**: esteiras que empurram, prensas hidráulicas, grades de laser, cabos energizados em poças, respiros de vapor que lançam o jogador
+- **Destrutíveis**: barris explosivos, carros, geradores e nós de dados — as explosões ferem robôs e detonam objetos próximos (reação em cadeia)
+- **Interativos**: câmeras que seguem o jogador, painéis holográficos que falham ao levar tiro, postes e letreiros de neon que quebram, sirenes de alarme
+- **Emboscadas**: a câmera trava, soa o alarme e robôs chegam por teletransporte em ondas; ao limpar, aparece "GO"
+
 ## Estrutura
 
 ```
@@ -28,30 +46,40 @@ src/
   config.ts             constantes (resolução, gravidade, chão)
   main.ts               configuração do Phaser
   scenes/
-    BootScene.ts        gera texturas e animações
-    MenuScene.ts        tela de título
-    GameScene.ts        gameplay: fase, câmera, colisões, HUD
+    BootScene.ts        carrega sprites, gera texturas e animações
+    MenuScene.ts        tela de título e escolha de missão
+    GameScene.ts        gameplay: câmera, colisões, progressão entre missões
+  level/
+    types.ts            formato de uma fase (LevelData)
+    mission1..3.ts      layout de cada missão
+    missions.ts         ordem da campanha
+  themes/
+    Theme.ts            interface de tema, camadas de parallax, profundidades
+    city.ts             Missão 1: cidade (arte, fundo animado, chuva)
+    factory.ts          Missão 2: fábrica
+    core.ts             Missão 3: núcleo da IA
+    draw.ts             desenho compartilhado (janelas, neon, cabos, grafite)
+  world/
+    World.ts            elementos dinâmicos e interativos das fases
+    art.ts              arte desses elementos (barril, câmera, laser, prensa...)
   entities/
     Player.ts           personagem principal (corpo + MacBook giratório + aura)
     Enemy.ts            IA dos robôs (atirador e garras), brilho dos olhos, destruição
-    enemyTypes.ts       catálogo de inimigos (stats e comportamento)
+    enemyTypes.ts       catálogo de inimigos
     weapons.ts          catálogo de armas
-  level/level1.ts       layout da fase: chão, coberturas, plataformas, inimigos, itens, decoração
   gfx/
-    textures.ts         personagens e armas (placeholders) + chama os geradores de arte
-    effects.ts          explosão, clarão do tiro, faíscas, poeira, textos
-    art/
-      kit.ts            pixel-art procedural: quantização em paleta com dithering
-      palettes.ts       paletas por camada (névoa ao fundo, cores quentes na frente)
-      primitives.ts     folhagem, cipós, blocos de pedra, colunas, troncos, cabeça esculpida
-      scenery.ts        camadas de parallax (céu, selva distante, plano médio, ruínas)
-      props.ts          chão, buracos, plataformas, coberturas, decoração, primeiro plano
-      fx.ts             sprites de efeitos e peças do HUD
-      heroFx.ts         efeitos do herói: projéteis de código, bits, EMP, aura, teletransporte
-      enemyFx.ts        efeitos dos robôs: plasma, clarão, brilho dos olhos, garras
-  ui/Hud.ts             HUD estilo arcade (pontos, barra, ARMS/BOMB, cronômetro, vidas)
+    effects.ts          explosão, clarão, faíscas, poeira, textos
+    art/                kit de pixel-art procedural + efeitos do herói/robôs + HUD
+  ui/Hud.ts             HUD estilo arcade
   input/Controls.ts     mapeamento de teclas -> ações
 ```
+
+### Criando ou editando uma fase
+
+Cada missão é um objeto `LevelData` em `src/level/`. Nele você posiciona chão (e buracos),
+plataformas, plataformas móveis, perigos, destrutíveis, interativos, inimigos, emboscadas,
+itens e decoração — tudo por coordenadas x (e y quando necessário; o chão fica em y=226).
+O visual vem do tema indicado em `theme`.
 
 ### Personagem principal
 
@@ -96,10 +124,9 @@ Poses, proporções e novas variantes ficam nesse script; os atributos (vida, ve
 
 ### Visual
 
-Toda a arte é **original e gerada por código** ao abrir o jogo (~200 ms): o cenário é desenhado com
-formas e gradientes e depois reduzido a uma paleta limitada com dithering, o que dá o aspecto de
-pixel-art de arcade. Para mudar a cena de uma fase, ajuste `decor`, `blocks`, `platforms` e
-`foreground` em `src/level/level1.ts`, ou a semente/paletas em `src/gfx/art/`.
+Toda a arte de cenário é **original e gerada por código** ao iniciar cada missão: o cenário é
+desenhado com formas e gradientes e depois reduzido a uma paleta limitada com dithering, o que dá
+o aspecto de pixel-art de arcade. Os temas ficam em `src/themes/`.
 
 O cronômetro no topo desce 1 unidade a cada 1,5 s; ao zerar, o jogador perde uma vida (como no arcade).
 

@@ -3,16 +3,24 @@ import { FONT, GAME_HEIGHT, GAME_WIDTH, GROUND_Y } from '../config';
 import { Controls } from '../input/Controls';
 import { Player } from '../entities/Player';
 import { Enemy } from '../entities/Enemy';
-import { ENEMIES } from '../entities/enemyTypes';
+import { ENEMIES, EnemyType } from '../entities/enemyTypes';
 import type { WeaponDef } from '../entities/weapons';
-import { LEVEL_1, LevelData } from '../level/level1';
+import { MISSIONS } from '../level/missions';
+import type { LevelData } from '../level/types';
 import { dustPuff, empBlast, explosion, floatingText, impactSpark, muzzleFlash, slash } from '../gfx/effects';
-import { layerWidth, PARALLAX } from '../gfx/art/scenery';
-import { blockTexture, GROUND_H, ledgeTexture, pillarTexture } from '../gfx/art/props';
+import { DEPTH, PARALLAX, Theme } from '../themes/Theme';
+import { THEMES } from '../themes';
+import { World } from '../world/World';
 import { Hud } from '../ui/Hud';
 
 type ArcadeImage = Phaser.Physics.Arcade.Image;
 type GameState = 'playing' | 'gameover' | 'clear';
+
+export interface GameInit {
+  mission?: number;
+  score?: number;
+  lives?: number;
+}
 
 const START_LIVES = 3;
 const START_TIME = 60;
@@ -22,13 +30,7 @@ const GRENADE_FUSE = 1100;
 const GRENADE_RADIUS = 52;
 const GRENADE_DAMAGE = 4;
 const CAMERA_LEAD = 0.4;
-const FOREGROUND_PARALLAX = 1.25;
-
-/** Camadas de profundidade (quanto maior, mais na frente). */
-const DEPTH = {
-  sky: -10, far: -9, rays: -8, mid: -7, near: -6, pit: -5, decor: -4, pillar: -3, ground: -2, lip: -1,
-  pickup: 8, bits: 11, ambient: 30, foreground: 40,
-};
+const GROUND_H = GAME_HEIGHT - GROUND_Y;
 
 /** Converte os argumentos genéricos dos callbacks de colisão do Phaser. */
 const as = <T>(o: unknown) => o as T;
@@ -40,16 +42,22 @@ export class GameScene extends Phaser.Scene {
   score = 0;
   lives = START_LIVES;
   timeLeft = START_TIME;
+  /** Emboscadas travam a câmera neste scrollX (null = livre). */
+  cameraLock: number | null = null;
 
-  private level: LevelData = LEVEL_1;
-  private solids!: Phaser.Physics.Arcade.StaticGroup;
-  private platforms!: Phaser.Physics.Arcade.StaticGroup;
-  private enemies!: Phaser.Physics.Arcade.Group;
-  private playerBullets!: Phaser.Physics.Arcade.Group;
-  private enemyBullets!: Phaser.Physics.Arcade.Group;
-  private grenades!: Phaser.Physics.Arcade.Group;
-  private pickups!: Phaser.Physics.Arcade.Group;
-  private debris!: Phaser.Physics.Arcade.Group;
+  level!: LevelData;
+  theme!: Theme;
+  world!: World;
+  missionIndex = 0;
+
+  solids!: Phaser.Physics.Arcade.StaticGroup;
+  platforms!: Phaser.Physics.Arcade.StaticGroup;
+  enemies!: Phaser.Physics.Arcade.Group;
+  playerBullets!: Phaser.Physics.Arcade.Group;
+  enemyBullets!: Phaser.Physics.Arcade.Group;
+  grenades!: Phaser.Physics.Arcade.Group;
+  pickups!: Phaser.Physics.Arcade.Group;
+  debris!: Phaser.Physics.Arcade.Group;
   private bits!: Phaser.GameObjects.Particles.ParticleEmitter;
   private spawnIndex = 0;
   private hud!: Hud;
@@ -59,29 +67,38 @@ export class GameScene extends Phaser.Scene {
     super('Game');
   }
 
-  create() {
+  create(data: GameInit = {}) {
     // A instância da cena é reaproveitada no restart: resetar estado aqui.
+    this.missionIndex = Phaser.Math.Clamp(data.mission ?? 0, 0, MISSIONS.length - 1);
+    this.level = MISSIONS[this.missionIndex];
+    this.theme = THEMES[this.level.theme];
     this.state = 'playing';
-    this.score = 0;
-    this.lives = START_LIVES;
+    this.score = data.score ?? 0;
+    this.lives = data.lives ?? START_LIVES;
     this.timeLeft = START_TIME;
     this.spawnIndex = 0;
+    this.cameraLock = null;
     this.physics.resume();
 
+    this.theme.generate(this, this.level);
     this.controls = new Controls(this);
     this.enterKey = this.input.keyboard!.addKey('ENTER');
 
-    this.createBackground();
+    this.theme.background(this, this.level);
     this.createGroups();
     this.buildLevel();
-    this.createAmbient();
+    this.world = new World(this, this.level, this.theme);
+    this.theme.ambience(this, this.level);
+    this.createBits();
 
     this.player = new Player(this, 60, GROUND_Y - 24, this.controls);
     this.createColliders();
+    this.world.setupColliders();
 
     this.cameras.main.setBounds(0, 0, this.level.width, GAME_HEIGHT);
+    this.cameras.main.fadeIn(400);
     this.hud = new Hud(this, this.level.name);
-    this.showBanner(this.level.name, 'COMEÇAR!', 2000);
+    this.showBanner(this.level.name, this.level.subtitle, 2200);
 
     this.time.addEvent({
       delay: TIMER_TICK,
@@ -93,16 +110,17 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
-  update(time: number) {
+  update(time: number, delta: number) {
     if (this.state === 'playing') {
       this.player.update(time);
       this.updateCamera();
       this.spawnEnemies();
+      this.world.update(time, delta);
 
       if (!this.player.dead && this.player.y > GAME_HEIGHT + 40) this.killPlayer();
-      if (!this.player.dead && this.player.x >= this.level.goalX) this.missionClear();
+      if (!this.player.dead && this.player.x >= this.level.goalX && this.cameraLock === null) this.missionClear();
     } else if (Phaser.Input.Keyboard.JustDown(this.enterKey)) {
-      this.scene.restart();
+      this.advance();
       return;
     }
 
@@ -111,34 +129,6 @@ export class GameScene extends Phaser.Scene {
   }
 
   // ---------- Montagem ----------
-
-  private createBackground() {
-    this.add.image(0, 0, 'bg_sky').setOrigin(0).setScrollFactor(0).setDepth(DEPTH.sky);
-    this.add.image(0, 0, 'bg_far').setOrigin(0).setScrollFactor(PARALLAX.far).setDepth(DEPTH.far);
-
-    // Raios de luz atravessando a copa
-    const raysW = layerWidth(this.level.width, PARALLAX.rays);
-    for (let x = 120; x < raysW; x += Phaser.Math.Between(260, 420)) {
-      const ray = this.add
-        .image(x, 0, 'fx_ray')
-        .setOrigin(0)
-        .setScrollFactor(PARALLAX.rays)
-        .setDepth(DEPTH.rays)
-        .setBlendMode(Phaser.BlendModes.ADD)
-        .setAlpha(0.14);
-      this.tweens.add({
-        targets: ray,
-        alpha: 0.26,
-        duration: Phaser.Math.Between(1800, 3000),
-        yoyo: true,
-        repeat: -1,
-        ease: 'Sine.easeInOut',
-      });
-    }
-
-    this.add.image(0, 0, 'bg_mid').setOrigin(0).setScrollFactor(PARALLAX.mid).setDepth(DEPTH.mid);
-    this.add.image(0, 0, 'bg_near').setOrigin(0).setScrollFactor(PARALLAX.near).setDepth(DEPTH.near);
-  }
 
   private createGroups() {
     this.solids = this.physics.add.staticGroup();
@@ -153,35 +143,51 @@ export class GameScene extends Phaser.Scene {
 
   private buildLevel() {
     const L = this.level;
+    const T = this.theme;
+    const g = T.ground;
 
-    // Fundo dos buracos
-    this.add.tileSprite(0, GROUND_Y + 2, L.width, GROUND_H, 'pit_fill').setOrigin(0).setDepth(DEPTH.pit);
+    // Fundo dos buracos (+ brilho, se o tema tiver: lava, energia...)
+    this.add.tileSprite(0, GROUND_Y + 2, L.width, GROUND_H, g.pit).setOrigin(0).setDepth(DEPTH.pit);
+    if (T.pitGlow !== undefined) {
+      let x = 0;
+      for (const seg of [...L.ground, { x: L.width, w: 0 }]) {
+        if (seg.x > x + 4) {
+          const glow = this.add
+            .image((x + seg.x) / 2, GROUND_Y + 6, 'eye_glow')
+            .setDisplaySize(seg.x - x + 30, 60)
+            .setTint(T.pitGlow)
+            .setBlendMode(Phaser.BlendModes.ADD)
+            .setDepth(DEPTH.pit);
+          this.tweens.add({ targets: glow, alpha: { from: 0.5, to: 1 }, duration: 700, yoyo: true, repeat: -1 });
+        }
+        x = seg.x + seg.w;
+      }
+    }
 
-    for (const g of L.ground) {
-      const ground = this.add.tileSprite(g.x, GROUND_Y, g.w, GROUND_H, 'ground_fill').setOrigin(0).setDepth(DEPTH.ground);
+    for (const seg of L.ground) {
+      const ground = this.add.tileSprite(seg.x, GROUND_Y, seg.w, GROUND_H, g.fill).setOrigin(0).setDepth(DEPTH.ground);
       this.physics.add.existing(ground, true);
       this.solids.add(ground);
-      this.add.tileSprite(g.x, GROUND_Y - 8, g.w, 10, 'ground_lip').setOrigin(0).setDepth(DEPTH.lip);
-      // Bordas de barranco onde há buraco
-      if (g.x > 0) this.add.image(g.x, GROUND_Y - 6, 'ground_edge').setOrigin(0).setFlipX(true).setDepth(DEPTH.lip);
-      if (g.x + g.w < L.width) this.add.image(g.x + g.w - 14, GROUND_Y - 6, 'ground_edge').setOrigin(0).setDepth(DEPTH.lip);
+      this.add.tileSprite(seg.x, GROUND_Y - 8, seg.w, 10, g.top).setOrigin(0).setDepth(DEPTH.lip);
+      if (seg.x > 0) this.add.image(seg.x, GROUND_Y - 6, g.edge).setOrigin(0).setFlipX(true).setDepth(DEPTH.lip);
+      if (seg.x + seg.w < L.width) this.add.image(seg.x + seg.w - 14, GROUND_Y - 6, g.edge).setOrigin(0).setDepth(DEPTH.lip);
     }
 
     for (const d of L.decor) {
-      this.add.image(d.x, GROUND_Y + 3, `decor_${d.kind}`).setOrigin(0.5, 1).setDepth(DEPTH.decor);
+      this.add.image(d.x, GROUND_Y + 3, `${T.id}_decor_${d.kind}`).setOrigin(0.5, 1).setDepth(DEPTH.decor);
     }
 
     for (const b of L.blocks) {
-      const block = this.solids.create(b.x + b.w / 2, GROUND_Y - b.h / 2, blockTexture(this, b.kind, b.w, b.h));
+      const block = this.solids.create(b.x + b.w / 2, GROUND_Y - b.h / 2, T.block(this, b.kind, b.w, b.h));
       block.setDepth(DEPTH.ground);
     }
 
     for (const p of L.platforms) {
       const pillarH = GROUND_Y - p.y - 8;
       for (const px of [p.x + 4, p.x + p.w - 22]) {
-        this.add.image(px, p.y + 10, pillarTexture(this, pillarH)).setOrigin(0).setDepth(DEPTH.pillar);
+        this.add.image(px, p.y + 10, T.pillar(this, pillarH)).setOrigin(0).setDepth(DEPTH.pillar);
       }
-      const plat = this.platforms.create(p.x + p.w / 2, p.y + 7, ledgeTexture(this, p.w)) as Phaser.Physics.Arcade.Sprite;
+      const plat = this.platforms.create(p.x + p.w / 2, p.y + 7, T.ledge(this, p.w)) as Phaser.Physics.Arcade.Sprite;
       plat.setDepth(DEPTH.ground);
       // Mão única: só colide por cima.
       const body = plat.body as Phaser.Physics.Arcade.StaticBody;
@@ -199,44 +205,16 @@ export class GameScene extends Phaser.Scene {
     this.add.image(L.goalX + 2, GROUND_Y - 70, 'flag').setOrigin(0).setDepth(DEPTH.decor);
 
     for (const f of L.foreground) {
-      const img =
-        f.kind === 'fern'
-          ? this.add.image(f.x, GAME_HEIGHT + 8, 'fg_fern').setOrigin(0.5, 1)
-          : this.add.image(f.x, -4, 'fg_vines').setOrigin(0.5, 0);
-      img.setScrollFactor(FOREGROUND_PARALLAX).setDepth(DEPTH.foreground);
+      const key = `${T.id}_fg_${f.kind}`;
+      const hangs = (this.textures.get(key).customData as { hangs?: boolean }).hangs;
+      const img = hangs
+        ? this.add.image(f.x, -2, key).setOrigin(0.5, 0)
+        : this.add.image(f.x, GAME_HEIGHT + 6, key).setOrigin(0.5, 1);
+      img.setScrollFactor(PARALLAX.fg).setDepth(DEPTH.foreground);
     }
   }
 
-  private createAmbient() {
-    // Folhas caindo
-    this.add
-      .particles(0, 0, 'leaf', {
-        x: { min: 0, max: GAME_WIDTH + 60 },
-        y: -8,
-        lifespan: 9000,
-        speedY: { min: 16, max: 34 },
-        speedX: { min: -26, max: 4 },
-        rotate: { start: 0, end: 540 },
-        frequency: 650,
-      })
-      .setScrollFactor(0)
-      .setDepth(DEPTH.ambient);
-
-    // Poeira brilhando na luz
-    this.add
-      .particles(0, 0, 'mote', {
-        x: { min: 0, max: GAME_WIDTH },
-        y: { min: 30, max: 200 },
-        lifespan: 4000,
-        speedX: { min: -6, max: 6 },
-        speedY: { min: -6, max: 3 },
-        alpha: { start: 0.6, end: 0 },
-        frequency: 380,
-        blendMode: Phaser.BlendModes.ADD,
-      })
-      .setScrollFactor(0)
-      .setDepth(DEPTH.ambient);
-
+  private createBits() {
     // Bits "0/1" que saltam do teclado a cada disparo (no lugar de cápsulas)
     this.bits = this.add
       .particles(0, 0, 'bits', {
@@ -248,7 +226,7 @@ export class GameScene extends Phaser.Scene {
         alpha: { start: 1, end: 0 },
         emitting: false,
       })
-      .setDepth(DEPTH.bits);
+      .setDepth(11);
   }
 
   private createColliders() {
@@ -296,7 +274,8 @@ export class GameScene extends Phaser.Scene {
   private updateCamera() {
     const cam = this.cameras.main;
     const target = this.player.x - GAME_WIDTH * CAMERA_LEAD;
-    if (target > cam.scrollX) cam.scrollX = Math.min(target, this.level.width - GAME_WIDTH);
+    const limit = Math.min(this.level.width - GAME_WIDTH, this.cameraLock ?? Infinity);
+    if (target > cam.scrollX) cam.scrollX = Math.min(target, limit);
 
     const minX = cam.scrollX + 10;
     const maxX = cam.scrollX + GAME_WIDTH - 10;
@@ -313,10 +292,29 @@ export class GameScene extends Phaser.Scene {
     const edge = this.cameras.main.scrollX + GAME_WIDTH + 20;
     while (this.spawnIndex < spawns.length && spawns[this.spawnIndex].x < edge) {
       const s = spawns[this.spawnIndex++];
-      const enemy = new Enemy(this, s.x, s.y ?? GROUND_Y - 27, ENEMIES[s.type]);
-      this.enemies.add(enemy);
-      enemy.setupBody();
+      this.spawnEnemy(s.type, s.x, s.y);
     }
+  }
+
+  /** Cria um robô; com `teleport`, ele chega por um feixe vermelho. */
+  spawnEnemy(type: EnemyType, x: number, y?: number, teleport = false) {
+    const enemy = new Enemy(this, x, y ?? GROUND_Y - 27, ENEMIES[type]);
+    this.enemies.add(enemy);
+    enemy.setupBody();
+    if (teleport) {
+      const beam = this.add
+        .image(x, 0, 'beam')
+        .setOrigin(0.5, 0)
+        .setTint(0xff3040)
+        .setDepth(21)
+        .setBlendMode(Phaser.BlendModes.ADD)
+        .setScale(0.2, 1);
+      this.tweens.add({ targets: beam, scaleX: 1.2, duration: 140, yoyo: true, hold: 200, onComplete: () => beam.destroy() });
+      enemy.setAlpha(0);
+      this.tweens.add({ targets: enemy, alpha: 1, duration: 300, delay: 120 });
+      this.glitchBars(x, enemy.y, [0xff2a2a, 0xffffff]);
+    }
+    return enemy;
   }
 
   // ---------- API usada pelas entidades ----------
@@ -385,7 +383,7 @@ export class GameScene extends Phaser.Scene {
     muzzleFlash(this, x, y, angle, 'muzzle_plasma');
   }
 
-  /** Dano vindo de ataques corpo a corpo dos inimigos. */
+  /** Dano vindo de ataques corpo a corpo, perigos e explosões. */
   hurtPlayer() {
     if (this.state === 'playing' && this.player.isVulnerable(this.time.now)) this.killPlayer();
   }
@@ -431,6 +429,7 @@ export class GameScene extends Phaser.Scene {
       const e = o as Enemy;
       if (!e.dying && Phaser.Math.Distance.Between(x, y, e.x, e.y) < GRENADE_RADIUS) e.hit(GRENADE_DAMAGE);
     }
+    this.world.explosionAt(x, y, GRENADE_RADIUS);
   }
 
   enemyInMeleeRange(x: number, y: number, facing: number): Enemy | undefined {
@@ -511,16 +510,28 @@ export class GameScene extends Phaser.Scene {
   private missionClear() {
     this.state = 'clear';
     this.physics.pause();
-    this.player.anims.play('player-idle');
-    this.score += 5000;
-    this.showBanner('MISSÃO CUMPRIDA!', 'ENTER PARA JOGAR DE NOVO');
+    this.player.anims.play('hero-idle');
+    this.score += 5000 + this.timeLeft * 100;
+    const last = this.missionIndex >= MISSIONS.length - 1;
+    this.showBanner('MISSÃO CUMPRIDA!', last ? 'O MUNDO FOI SALVO! ENTER' : 'ENTER: PROXIMA MISSÃO');
   }
 
-  private showBanner(title: string, subtitle: string, hideAfter?: number) {
+  /** ENTER depois do fim: próxima missão, ou volta ao início. */
+  private advance() {
+    if (this.state === 'clear' && this.missionIndex < MISSIONS.length - 1) {
+      this.scene.restart({ mission: this.missionIndex + 1, score: this.score, lives: this.lives } satisfies GameInit);
+    } else if (this.state === 'clear') {
+      this.scene.start('Menu');
+    } else {
+      this.scene.restart({ mission: this.missionIndex } satisfies GameInit);
+    }
+  }
+
+  showBanner(title: string, subtitle: string, hideAfter?: number, color = '#ffcf3a') {
     const cx = GAME_WIDTH / 2;
     const cy = GAME_HEIGHT / 2 - 20;
     const t1 = this.add
-      .text(cx, cy, title, { fontFamily: FONT, fontSize: '18px', color: '#ffcf3a' })
+      .text(cx, cy, title, { fontFamily: FONT, fontSize: '18px', color })
       .setOrigin(0.5)
       .setStroke('#6b1a10', 5)
       .setShadow(2, 2, '#000000', 0, true, true)

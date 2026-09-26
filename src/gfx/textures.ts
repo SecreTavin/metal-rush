@@ -1,13 +1,12 @@
 import Phaser from 'phaser';
-import { LEVEL_1 } from '../level/level1';
+import { generateWorldArt } from '../world/art';
 import { generateFx } from './art/fx';
-import { generateProps } from './art/props';
-import { generateScenery } from './art/scenery';
 import { Palette, pixelTexture } from './pixel';
 
 /*
  * Texturas geradas por código. Os personagens (herói e robôs) são spritesheets em
  * public/sprites/, produzidos pelos scripts em tools/ a partir dos esboços.
+ * O cenário de cada missão é gerado pelo tema (src/themes/) ao iniciar a fase.
  */
 
 const OUTLINE = '#16161c';
@@ -55,6 +54,5 @@ export function generateTextures(scene: Phaser.Scene) {
   pixelTexture(scene, 'flag', FLAG, { k: OUTLINE, y: '#f4f4f4', r: '#d7362b' });
 
   generateFx(scene);
-  generateProps(scene);
-  generateScenery(scene, LEVEL_1.width);
+  generateWorldArt(scene);
 }
