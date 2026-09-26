@@ -3,6 +3,7 @@ import { FONT, GAME_HEIGHT, GAME_WIDTH } from '../config';
 import { MISSIONS } from '../level/missions';
 import { THEMES } from '../themes';
 import type { GameInit } from './GameScene';
+import { RunState } from '../run/RunState';
 
 export class MenuScene extends Phaser.Scene {
   constructor() {
@@ -37,9 +38,8 @@ export class MenuScene extends Phaser.Scene {
       .setStroke('#000000', 3);
     this.tweens.add({ targets: press, alpha: 0.15, duration: 500, yoyo: true, repeat: -1 });
 
-    const missions = MISSIONS.map((m, i) => `${i + 1} - ${m.subtitle}`).join('\n');
     this.add
-      .text(cx, 146, missions, { fontFamily: FONT, fontSize: '8px', color: '#ff8cf5', lineSpacing: 4, align: 'center' })
+      .text(cx, 146, 'CADA RUN E UNICA. MORREU, RECOMEÇA.\nSKILLS, FRAGMENTOS E CHEFES.', { fontFamily: FONT, fontSize: '8px', color: '#ff8cf5', lineSpacing: 4, align: 'center' })
       .setOrigin(0.5)
       .setStroke('#000000', 3);
 
@@ -49,6 +49,7 @@ export class MenuScene extends Phaser.Scene {
       'ATIRAR ............... J / Z',
       'PULAR ........ K / X / ESPAÇO',
       'PENDRIVE EMP ......... L / C',
+      'UPGRADE (TERMINAL) ..... CIMA',
     ];
     this.add
       .text(cx, 218, controls.join('\n'), {
@@ -60,12 +61,18 @@ export class MenuScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setStroke('#000000', 2);
 
-    const start = (mission = 0) => this.scene.start('Game', { mission } satisfies GameInit);
-    this.input.keyboard!.once('keydown-ENTER', () => start());
-    this.input.once('pointerdown', () => start());
-    // Teclas 1..N escolhem a missão
-    MISSIONS.forEach((_, i) => {
-      this.input.keyboard!.once(`keydown-${['ONE', 'TWO', 'THREE', 'FOUR', 'FIVE'][i]}`, () => start(i));
-    });
+    const toLab = () => this.scene.start('Lab');
+    this.input.keyboard!.once('keydown-ENTER', toLab);
+    this.input.once('pointerdown', toLab);
+    // Atalho de desenvolvimento: teclas 1..N começam uma run direto na missão
+    if (import.meta.env.DEV) {
+      MISSIONS.forEach((_, i) => {
+        this.input.keyboard!.once(`keydown-${['ONE', 'TWO', 'THREE', 'FOUR', 'FIVE'][i]}`, () => {
+          const run = new RunState();
+          run.mission = i;
+          this.scene.start('Game', { run } satisfies GameInit);
+        });
+      });
+    }
   }
 }

@@ -281,7 +281,7 @@ export class World {
         if (t < 0.72) slammed = false;
         if (lethal) {
           const zone = new Phaser.Geom.Rectangle(def.x - 21, y - 12, 42, 26);
-          if (this.playerTouches(zone)) gs.hurtPlayer();
+          if (this.playerTouches(zone)) gs.hurtPlayer(2, def.x);
           for (const o of gs.enemies.getChildren()) {
             const e = o as Enemy;
             if (!e.dying && Math.abs(e.x - def.x) < 22 && e.y - 23 < y + 12) e.hit(99);
@@ -476,6 +476,7 @@ export class World {
     }
     img.destroy();
     gs.addScore({ barrel: 100, car: 500, generator: 300, datanode: 300 }[s.kind as DestructibleKind], x, y - 20);
+    gs.dropFragments(x, y - 10, s.kind === 'car' ? 5 : 2);
     this.blast(x, y, radius, s);
   }
 
@@ -486,7 +487,7 @@ export class World {
       const e = o as Enemy;
       if (!e.dying && Phaser.Math.Distance.Between(x, y, e.x, e.y) < radius) e.hit(4);
     }
-    if (Phaser.Math.Distance.Between(x, y, gs.player.x, gs.player.y) < radius * 0.55) gs.hurtPlayer();
+    if (Phaser.Math.Distance.Between(x, y, gs.player.x, gs.player.y) < radius * 0.55) gs.hurtPlayer(1, x);
     for (const s of this.shootables.values()) {
       if (s === source || s.broken) continue;
       if (Phaser.Math.Distance.Between(x, y, s.x, s.y) < radius) {

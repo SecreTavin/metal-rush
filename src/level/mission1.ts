@@ -120,6 +120,7 @@ export const MISSION_1: LevelData = {
       ],
     },
   ],
+  terminals: [{ x: 2000 }, { x: 4480 }],
   pickups: [
     { x: 1300, kind: 'heavy', y: 140 },
     { x: 1612, kind: 'bombs', y: 96 },

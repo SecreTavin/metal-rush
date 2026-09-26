@@ -3,6 +3,7 @@ import { GAME_WIDTH, GAME_HEIGHT, GRAVITY } from './config';
 import { BootScene } from './scenes/BootScene';
 import { MenuScene } from './scenes/MenuScene';
 import { GameScene } from './scenes/GameScene';
+import { LabScene } from './scenes/LabScene';
 
 async function waitForFont() {
   try {
@@ -34,7 +35,7 @@ waitForFont().then(() => {
       mode: Phaser.Scale.FIT,
       autoCenter: Phaser.Scale.CENTER_BOTH,
     },
-    scene: [BootScene, MenuScene, GameScene],
+    scene: [BootScene, MenuScene, LabScene, GameScene],
   });
   // Facilita depuração pelo console do navegador em modo dev.
   if (import.meta.env.DEV) Object.assign(window, { game });

@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { generateTextures } from '../gfx/textures';
 import { createHeroAnimations, generateHeroFx } from '../gfx/art/heroFx';
 import { createEnemyAnimations, generateEnemyFx } from '../gfx/art/enemyFx';
+import { generateRunArt } from '../run/art';
 
 export class BootScene extends Phaser.Scene {
   constructor() {
@@ -24,6 +25,7 @@ export class BootScene extends Phaser.Scene {
     createHeroAnimations(this);
     generateEnemyFx(this);
     createEnemyAnimations(this);
+    generateRunArt(this);
     this.scene.start('Menu');
   }
 }

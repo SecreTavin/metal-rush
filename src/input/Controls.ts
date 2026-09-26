@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 
-export type Action = 'left' | 'right' | 'up' | 'down' | 'shoot' | 'jump' | 'grenade';
+export type Action = 'left' | 'right' | 'up' | 'down' | 'shoot' | 'jump' | 'grenade' | 'dash';
 
 const BINDINGS: Record<Action, string[]> = {
   left: ['LEFT', 'A'],
@@ -10,6 +10,7 @@ const BINDINGS: Record<Action, string[]> = {
   shoot: ['J', 'Z'],
   jump: ['K', 'X', 'SPACE'],
   grenade: ['L', 'C'],
+  dash: ['SHIFT', 'I'],
 };
 
 /** Camada de entrada: o jogo só pergunta por ações, nunca por teclas. Facilita adicionar gamepad/toque depois. */

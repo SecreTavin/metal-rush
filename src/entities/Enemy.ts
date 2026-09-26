@@ -126,7 +126,7 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     const p = this.gs.player;
     this.gs.clawSlash(this.x + this.facing * 16, this.y - 6, this.facing);
     const dx = (p.x - this.x) * this.facing;
-    if (dx > -6 && dx < (this.def.clawReach ?? 26) + 6 && Math.abs(p.y - this.y) < 30) this.gs.hurtPlayer();
+    if (dx > -6 && dx < (this.def.clawReach ?? 26) + 6 && Math.abs(p.y - this.y) < 30) this.gs.hurtPlayer(1, this.x);
   }
 
   hit(damage: number) {

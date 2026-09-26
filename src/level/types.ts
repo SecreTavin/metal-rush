@@ -66,6 +66,8 @@ export interface LevelData {
   spawns: { x: number; type: EnemyType; y?: number }[];
   ambushes?: AmbushDef[];
   pickups: { x: number; kind: 'heavy' | 'bombs'; y?: number }[];
+  /** Terminais de upgrade (escolha 1 de 3 skills). */
+  terminals?: { x: number }[];
   /** Decoração atrás dos personagens (as chaves dependem do tema). */
   decor: { x: number; kind: string }[];
   /** Elementos na frente dos personagens (parallax mais rápido). */

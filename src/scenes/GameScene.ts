@@ -12,25 +12,26 @@ import { DEPTH, PARALLAX, Theme } from '../themes/Theme';
 import { THEMES } from '../themes';
 import { World } from '../world/World';
 import { Hud } from '../ui/Hud';
+import { SkillChoice } from '../ui/SkillChoice';
+import { RunState } from '../run/RunState';
+import { loadSave, upgradeLevel } from '../run/save';
+import { rollSkills, SkillDef } from '../run/skills';
 
 type ArcadeImage = Phaser.Physics.Arcade.Image;
-type GameState = 'playing' | 'gameover' | 'clear';
+type GameState = 'playing' | 'choosing' | 'gameover' | 'clear';
 
 export interface GameInit {
-  mission?: number;
-  score?: number;
-  lives?: number;
+  run?: RunState;
 }
 
-const START_LIVES = 3;
-const START_TIME = 60;
-/** Duração de 1 "segundo" do cronômetro (em ms), como nos arcades. */
-const TIMER_TICK = 1500;
 const GRENADE_FUSE = 1100;
 const GRENADE_RADIUS = 52;
 const GRENADE_DAMAGE = 4;
 const CAMERA_LEAD = 0.4;
 const GROUND_H = GAME_HEIGHT - GROUND_Y;
+const PIT_DAMAGE = 2;
+/** Vida extra dos robôs a cada missão (dificuldade crescente). */
+const ENEMY_HP_PER_MISSION = 0.4;
 
 /** Converte os argumentos genéricos dos callbacks de colisão do Phaser. */
 const as = <T>(o: unknown) => o as T;
@@ -38,17 +39,15 @@ const as = <T>(o: unknown) => o as T;
 export class GameScene extends Phaser.Scene {
   controls!: Controls;
   player!: Player;
+  run!: RunState;
   state: GameState = 'playing';
-  score = 0;
-  lives = START_LIVES;
-  timeLeft = START_TIME;
-  /** Emboscadas travam a câmera neste scrollX (null = livre). */
+  /** Emboscadas e chefes travam a câmera neste scrollX (null = livre). */
   cameraLock: number | null = null;
 
   level!: LevelData;
   theme!: Theme;
   world!: World;
-  missionIndex = 0;
+  hud!: Hud;
 
   solids!: Phaser.Physics.Arcade.StaticGroup;
   platforms!: Phaser.Physics.Arcade.StaticGroup;
@@ -58,26 +57,32 @@ export class GameScene extends Phaser.Scene {
   grenades!: Phaser.Physics.Arcade.Group;
   pickups!: Phaser.Physics.Arcade.Group;
   debris!: Phaser.Physics.Arcade.Group;
+  /** Fragmentos de dados e kits de cura. */
+  loot!: Phaser.Physics.Arcade.Group;
   private bits!: Phaser.GameObjects.Particles.ParticleEmitter;
   private spawnIndex = 0;
-  private hud!: Hud;
+  private lastSafeX = 60;
+  private terminals: { img: Phaser.GameObjects.Image; prompt: Phaser.GameObjects.Text; used: boolean }[] = [];
   private enterKey!: Phaser.Input.Keyboard.Key;
 
   constructor() {
     super('Game');
   }
 
+  get missionIndex() {
+    return this.run.mission;
+  }
+
   create(data: GameInit = {}) {
     // A instância da cena é reaproveitada no restart: resetar estado aqui.
-    this.missionIndex = Phaser.Math.Clamp(data.mission ?? 0, 0, MISSIONS.length - 1);
-    this.level = MISSIONS[this.missionIndex];
+    this.run = data.run ?? new RunState();
+    this.level = MISSIONS[Phaser.Math.Clamp(this.run.mission, 0, MISSIONS.length - 1)];
     this.theme = THEMES[this.level.theme];
     this.state = 'playing';
-    this.score = data.score ?? 0;
-    this.lives = data.lives ?? START_LIVES;
-    this.timeLeft = START_TIME;
     this.spawnIndex = 0;
     this.cameraLock = null;
+    this.lastSafeX = 60;
+    this.terminals = [];
     this.physics.resume();
 
     this.theme.generate(this, this.level);
@@ -100,26 +105,27 @@ export class GameScene extends Phaser.Scene {
     this.hud = new Hud(this, this.level.name);
     this.showBanner(this.level.name, this.level.subtitle, 2200);
 
-    this.time.addEvent({
-      delay: TIMER_TICK,
-      loop: true,
-      callback: () => {
-        if (this.state !== 'playing' || this.player.dead || this.timeLeft <= 0) return;
-        if (--this.timeLeft <= 0) this.killPlayer();
-      },
-    });
+    // Melhoria "Boot com Skill": primeira escolha logo no início da run
+    if (this.run.bootChoice && this.run.mission === 0) {
+      this.run.bootChoice = false;
+      this.time.delayedCall(2600, () => this.openSkillChoice('BOOT: ESCOLHA UMA SKILL'));
+    }
   }
 
   update(time: number, delta: number) {
     if (this.state === 'playing') {
+      this.run.timeMs += delta;
       this.player.update(time);
       this.updateCamera();
       this.spawnEnemies();
       this.world.update(time, delta);
+      this.updateLoot();
+      this.updateTerminals();
+      this.trackSafeGround();
 
-      if (!this.player.dead && this.player.y > GAME_HEIGHT + 40) this.killPlayer();
+      if (!this.player.dead && this.player.y > GAME_HEIGHT + 30) this.fallIntoPit();
       if (!this.player.dead && this.player.x >= this.level.goalX && this.cameraLock === null) this.missionClear();
-    } else if (Phaser.Input.Keyboard.JustDown(this.enterKey)) {
+    } else if ((this.state === 'gameover' || this.state === 'clear') && Phaser.Input.Keyboard.JustDown(this.enterKey)) {
       this.advance();
       return;
     }
@@ -139,6 +145,7 @@ export class GameScene extends Phaser.Scene {
     this.grenades = this.physics.add.group();
     this.pickups = this.physics.add.group();
     this.debris = this.physics.add.group({ bounceY: 0.35, dragX: 70 });
+    this.loot = this.physics.add.group({ bounceY: 0.4, dragX: 120 });
   }
 
   private buildLevel() {
@@ -201,6 +208,8 @@ export class GameScene extends Phaser.Scene {
       crate.setData('kind', pk.kind).setDepth(DEPTH.pickup);
     }
 
+    for (const t of L.terminals ?? []) this.addTerminal(t.x);
+
     this.add.rectangle(L.goalX, GROUND_Y - 70, 3, 70, 0x333333).setOrigin(0).setDepth(DEPTH.decor);
     this.add.image(L.goalX + 2, GROUND_Y - 70, 'flag').setOrigin(0).setDepth(DEPTH.decor);
 
@@ -212,6 +221,21 @@ export class GameScene extends Phaser.Scene {
         : this.add.image(f.x, GAME_HEIGHT + 6, key).setOrigin(0.5, 1);
       img.setScrollFactor(PARALLAX.fg).setDepth(DEPTH.foreground);
     }
+  }
+
+  /** Terminal de upgrade: ao chegar perto e apertar CIMA, abre a escolha de skill. */
+  addTerminal(x: number) {
+    const img = this.add.image(x, GROUND_Y + 1, 'upgrade_terminal', 0).setOrigin(0.5, 1).setDepth(DEPTH.interactive);
+    const glow = this.add.image(x, GROUND_Y - 38, 'eye_glow').setScale(3).setTint(0x8ff0ff).setBlendMode(Phaser.BlendModes.ADD).setDepth(DEPTH.interactive);
+    this.tweens.add({ targets: glow, alpha: { from: 0.3, to: 0.8 }, duration: 700, yoyo: true, repeat: -1 });
+    const prompt = this.add
+      .text(x, GROUND_Y - 60, 'CIMA: UPGRADE', { fontFamily: FONT, fontSize: '8px', color: '#8ff0ff' })
+      .setOrigin(0.5)
+      .setStroke('#000000', 3)
+      .setDepth(DEPTH.foreground)
+      .setVisible(false);
+    img.setData('glow', glow);
+    this.terminals.push({ img, prompt, used: false });
   }
 
   private createBits() {
@@ -237,28 +261,22 @@ export class GameScene extends Phaser.Scene {
     p.collider(this.pickups, [this.solids, this.platforms]);
     p.collider(this.grenades, [this.solids, this.platforms]);
     p.collider(this.debris, [this.solids, this.platforms]);
+    p.collider(this.loot, [this.solids, this.platforms]);
 
-    const hitWall = (b: unknown) => {
+    p.overlap(this.playerBullets, this.solids, (b) => this.bulletHitsWall(as<ArcadeImage>(b)));
+    p.overlap(this.enemyBullets, this.solids, (b) => {
       const bullet = as<ArcadeImage>(b);
-      impactSpark(this, bullet.x, bullet.y, bullet.getData('impact') ?? 'spark');
-      bullet.destroy();
-    };
-    p.overlap(this.playerBullets, this.solids, hitWall);
-    p.overlap(this.enemyBullets, this.solids, hitWall);
-
-    p.overlap(this.playerBullets, this.enemies, (b, e) => {
-      const enemy = as<Enemy>(e);
-      if (enemy.dying) return;
-      const bullet = as<ArcadeImage>(b);
-      enemy.hit(bullet.getData('damage'));
-      impactSpark(this, bullet.x, bullet.y, bullet.getData('impact'));
+      impactSpark(this, bullet.x, bullet.y);
       bullet.destroy();
     });
 
+    p.overlap(this.playerBullets, this.enemies, (b, e) => this.bulletHitsEnemy(as<ArcadeImage>(b), as<Enemy>(e)));
+
     p.overlap(this.player, this.enemyBullets, (_pl, b) => {
       if (!this.player.isVulnerable(this.time.now)) return;
-      as<ArcadeImage>(b).destroy();
-      this.killPlayer();
+      const bullet = as<ArcadeImage>(b);
+      this.hurtPlayer(1, bullet.x);
+      bullet.destroy();
     });
 
     p.overlap(this.grenades, this.enemies, (g, e) => {
@@ -266,9 +284,10 @@ export class GameScene extends Phaser.Scene {
     });
 
     p.overlap(this.player, this.pickups, (_pl, c) => this.collectPickup(as<ArcadeImage>(c)));
+    p.overlap(this.player, this.loot, (_pl, l) => this.collectLoot(as<ArcadeImage>(l)));
   }
 
-  // ---------- Câmera e spawns ----------
+  // ---------- Câmera, spawns e segurança ----------
 
   /** Estilo Metal Slug: a câmera só anda para frente e o jogador não sai pela esquerda. */
   private updateCamera() {
@@ -299,6 +318,7 @@ export class GameScene extends Phaser.Scene {
   /** Cria um robô; com `teleport`, ele chega por um feixe vermelho. */
   spawnEnemy(type: EnemyType, x: number, y?: number, teleport = false) {
     const enemy = new Enemy(this, x, y ?? GROUND_Y - 27, ENEMIES[type]);
+    enemy.hp = Math.round(enemy.def.hp * (1 + this.run.mission * ENEMY_HP_PER_MISSION));
     this.enemies.add(enemy);
     enemy.setupBody();
     if (teleport) {
@@ -317,14 +337,102 @@ export class GameScene extends Phaser.Scene {
     return enemy;
   }
 
-  // ---------- API usada pelas entidades ----------
-
-  spawnPlayerBullet(x: number, y: number, angle: number, weapon: WeaponDef) {
-    const b = this.playerBullets.create(x, y, weapon.bullet) as ArcadeImage;
-    b.setRotation(angle).setData('damage', weapon.damage).setData('impact', weapon.impact).setDepth(8);
-    b.setVelocity(Math.cos(angle) * weapon.speed, Math.sin(angle) * weapon.speed);
-    muzzleFlash(this, x, y, angle, 'muzzle_code', weapon.bitsTint);
+  /** Lembra o último ponto de chão firme para voltar se cair num buraco. */
+  private trackSafeGround() {
+    const p = this.player;
+    if (p.dead || !p.body.blocked.down || Math.abs(p.body.bottom - GROUND_Y) > 2) return;
+    const seg = this.level.ground.find((g) => p.x >= g.x + 20 && p.x <= g.x + g.w - 20);
+    if (seg) this.lastSafeX = p.x;
   }
+
+  private fallIntoPit() {
+    const run = this.run;
+    run.hp = Math.max(0, run.hp - PIT_DAMAGE);
+    this.cameras.main.shake(150, 0.006);
+    this.glitchBurst(this.player.x, GAME_HEIGHT - 20);
+    if (run.hp <= 0) {
+      this.player.die();
+      this.runOver();
+      return;
+    }
+    const x = Math.max(this.lastSafeX, this.cameras.main.scrollX + 30);
+    this.player.warpTo(this.safeGroundX(x), 60, this.time.now);
+  }
+
+  /** Garante um x em chão firme (não em um buraco). */
+  private safeGroundX(x: number) {
+    const seg = this.level.ground.find((g) => x >= g.x + 16 && x <= g.x + g.w - 16);
+    if (seg) return x;
+    const back = [...this.level.ground].reverse().find((g) => g.x + g.w - 20 < x);
+    return back ? back.x + back.w - 30 : this.level.ground[0].x + 30;
+  }
+
+  // ---------- Projéteis do herói (skills: crítico, perfurar, dividir, ricochete) ----------
+
+  spawnPlayerBullet(x: number, y: number, angle: number, weapon: WeaponDef, primary = true, child = false) {
+    const s = this.run.stats;
+    const b = this.playerBullets.create(x, y, weapon.bullet) as ArcadeImage;
+    b.setRotation(angle).setDepth(8);
+    b.setData({
+      damage: weapon.damage,
+      impact: weapon.impact,
+      pierce: s.pierce,
+      ricochet: s.ricochet ? 1 : 0,
+      fork: s.fork && !child,
+      hits: new Set<Enemy>(),
+      weapon,
+    });
+    if (child) b.setScale(0.7);
+    b.setVelocity(Math.cos(angle) * weapon.speed, Math.sin(angle) * weapon.speed);
+    if (primary && !child) muzzleFlash(this, x, y, angle, 'muzzle_code', weapon.bitsTint);
+  }
+
+  private bulletHitsEnemy(bullet: ArcadeImage, enemy: Enemy) {
+    if (!bullet.active || enemy.dying) return;
+    const hits = bullet.getData('hits') as Set<Enemy>;
+    if (hits.has(enemy)) return;
+    hits.add(enemy);
+    const crit = Math.random() < this.run.stats.critChance;
+    const dmg = (bullet.getData('damage') as number) * (crit ? 3 : 1);
+    enemy.hit(dmg);
+    impactSpark(this, bullet.x, bullet.y, bullet.getData('impact'));
+    if (crit) floatingText(this, enemy.x, enemy.y - 34, 'CRIT!', '#ffcf3a');
+
+    if (bullet.getData('fork')) {
+      // Fork(): dois projéteis menores saem em diagonal
+      const a = bullet.rotation;
+      for (const d of [-0.6, 0.6]) {
+        this.spawnPlayerBullet(bullet.x + Math.cos(a) * 6, bullet.y, a + d, bullet.getData('weapon'), false, true);
+      }
+      bullet.setData('fork', false);
+    }
+    const pierce = bullet.getData('pierce') as number;
+    if (pierce > 0) bullet.setData('pierce', pierce - 1);
+    else bullet.destroy();
+  }
+
+  private bulletHitsWall(bullet: ArcadeImage) {
+    if (!bullet.active) return;
+    const left = bullet.getData('ricochet') as number;
+    const body = bullet.body as Phaser.Physics.Arcade.Body;
+    if (left > 0) {
+      bullet.setData('ricochet', left - 1);
+      const vx = body.velocity.x;
+      const vy = body.velocity.y;
+      // bate no chão/teto: inverte y; bate na parede: inverte x
+      if (Math.abs(vy) > Math.abs(vx)) body.velocity.y = -vy;
+      else body.velocity.x = -vx;
+      bullet.x -= Math.sign(vx) * 4;
+      bullet.y -= Math.sign(vy) * 4;
+      bullet.setRotation(Math.atan2(body.velocity.y, body.velocity.x));
+      impactSpark(this, bullet.x, bullet.y, 'bolt_hit');
+      return;
+    }
+    impactSpark(this, bullet.x, bullet.y, bullet.getData('impact') ?? 'spark');
+    bullet.destroy();
+  }
+
+  // ---------- API usada pelas entidades ----------
 
   emitBits(x: number, y: number, tint: number) {
     this.bits.setParticleTint(tint);
@@ -343,7 +451,7 @@ export class GameScene extends Phaser.Scene {
     this.tweens.add({ targets: ghost, alpha: 0, duration: 220, onComplete: () => ghost.destroy() });
   }
 
-  /** Falha digital quando o herói é atingido: bits voando e barras de interferência. */
+  /** Falha digital: bits voando e barras de interferência. */
   glitchBurst(x: number, y: number) {
     const bits = this.add
       .particles(x, y, 'bits', {
@@ -360,7 +468,7 @@ export class GameScene extends Phaser.Scene {
     this.glitchBars(x, y, [0x8ff0ff, 0xff5aff]);
   }
 
-  private glitchBars(x: number, y: number, colors: number[]) {
+  glitchBars(x: number, y: number, colors: number[]) {
     for (let i = 0; i < 6; i++) {
       const bar = this.add
         .rectangle(x + Phaser.Math.Between(-14, 14), y + Phaser.Math.Between(-22, 18), Phaser.Math.Between(10, 26), 2, colors[i % colors.length])
@@ -370,10 +478,30 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  /** Feixe de teletransporte no respawn. */
+  /** Feixe de teletransporte (volta do buraco). */
   teleportBeam(x: number) {
     const beam = this.add.image(x, 0, 'beam').setOrigin(0.5, 0).setDepth(21).setBlendMode(Phaser.BlendModes.ADD).setScale(0.2, 1);
     this.tweens.add({ targets: beam, scaleX: 1, duration: 150, yoyo: true, hold: 250, onComplete: () => beam.destroy() });
+  }
+
+  /** Anel de energia do pulo duplo (Sudo Jump). */
+  jumpRing(x: number, y: number) {
+    const ring = this.add.sprite(x, y, 'hero_ring').setBlendMode(Phaser.BlendModes.ADD).setDepth(9);
+    ring.play('hero_ring');
+    this.tweens.add({ targets: ring, scale: 1.8, alpha: 0, y: y + 6, duration: 300, onComplete: () => ring.destroy() });
+  }
+
+  /** O escudo Firewall absorveu um golpe. */
+  shieldBreak(x: number, y: number) {
+    const s = this.add.image(x, y, 'shield_bubble').setBlendMode(Phaser.BlendModes.ADD).setDepth(12);
+    this.tweens.add({ targets: s, scale: 1.8, alpha: 0, duration: 350, onComplete: () => s.destroy() });
+    floatingText(this, x, y - 34, 'FIREWALL', '#8ff0ff');
+    this.cameras.main.flash(80, 120, 220, 255);
+  }
+
+  /** Kernel Panic: EMP ao redor do herói quando ele é atingido. */
+  panicBlast(x: number, y: number) {
+    this.empAt(x, y + 10);
   }
 
   spawnEnemyBullet(x: number, y: number, angle: number, speed: number) {
@@ -383,9 +511,11 @@ export class GameScene extends Phaser.Scene {
     muzzleFlash(this, x, y, angle, 'muzzle_plasma');
   }
 
-  /** Dano vindo de ataques corpo a corpo, perigos e explosões. */
-  hurtPlayer() {
-    if (this.state === 'playing' && this.player.isVulnerable(this.time.now)) this.killPlayer();
+  /** Dano no herói (ataques, perigos, explosões). `fromX` define o lado do empurrão. */
+  hurtPlayer(amount = 1, fromX?: number) {
+    if (this.state !== 'playing') return;
+    const hit = this.player.hurt(amount, this.time.now, fromX);
+    if (hit && this.player.dead) this.runOver();
   }
 
   clawSlash(x: number, y: number, facing: number) {
@@ -393,7 +523,7 @@ export class GameScene extends Phaser.Scene {
     this.tweens.add({ targets: s, alpha: 0, duration: 180, onComplete: () => s.destroy() });
   }
 
-  /** Robô destruído: explosão pequena e peças (crânio, ossos, rifle) voando e quicando. */
+  /** Robô destruído: explosão, peças voando e fragmentos (às vezes cura). */
   robotDestroyed(e: Enemy) {
     explosion(this, e.x, e.y - 14, 0.6);
     this.cameras.main.shake(80, 0.004);
@@ -406,6 +536,97 @@ export class GameScene extends Phaser.Scene {
       this.tweens.add({ targets: part, alpha: 0, delay: 1400, duration: 400, onComplete: () => part.destroy() });
     });
     this.glitchBars(e.x, e.y - 10, [0xff2a2a, 0xff8080]);
+    this.run.kills++;
+    this.dropFragments(e.x, e.y - 10, Phaser.Math.Between(1, 3));
+    if (Math.random() < this.run.stats.healDropChance) this.dropHeal(e.x, e.y - 10);
+  }
+
+  // ---------- Fragmentos e cura ----------
+
+  dropFragments(x: number, y: number, count: number) {
+    for (let i = 0; i < count; i++) {
+      const f = this.loot.create(x, y, 'frag') as Phaser.Physics.Arcade.Sprite;
+      f.play('frag').setDepth(DEPTH.pickup).setData('kind', 'frag');
+      f.setVelocity(Phaser.Math.Between(-90, 90), Phaser.Math.Between(-240, -140));
+      this.time.delayedCall(12000, () => f.active && f.destroy());
+    }
+  }
+
+  dropHeal(x: number, y: number) {
+    const h = this.loot.create(x, y, 'heal') as ArcadeImage;
+    h.setDepth(DEPTH.pickup).setData('kind', 'heal').setVelocity(0, -200);
+  }
+
+  /** Ímã: fragmentos próximos voam até o herói. */
+  private updateLoot() {
+    const p = this.player;
+    if (p.dead) return;
+    const r = this.run.stats.magnet;
+    for (const o of this.loot.getChildren()) {
+      const l = o as ArcadeImage;
+      if (l.getData('kind') !== 'frag') continue;
+      const dx = p.x - l.x;
+      const dy = p.y - l.y;
+      const d = Math.hypot(dx, dy);
+      if (d < r && d > 0) l.setVelocity((dx / d) * 260, (dy / d) * 260);
+    }
+  }
+
+  private collectLoot(l: ArcadeImage) {
+    if (!l.active || this.player.dead) return;
+    if (l.getData('kind') === 'heal') {
+      if (this.run.hp >= this.run.maxHp) return;
+      this.run.heal(1);
+      floatingText(this, l.x, l.y - 10, '+1 HP', '#7aff9a');
+    } else {
+      this.run.fragments += this.run.fragmentValue(1);
+    }
+    l.destroy();
+  }
+
+  // ---------- Terminais de upgrade ----------
+
+  private updateTerminals() {
+    const p = this.player;
+    for (const t of this.terminals) {
+      if (t.used) continue;
+      const near = Math.abs(p.x - t.img.x) < 22 && Math.abs(p.body.bottom - GROUND_Y) < 6;
+      t.prompt.setVisible(near);
+      if (near && this.controls.justDown('up')) {
+        t.used = true;
+        t.prompt.destroy();
+        t.img.setFrame(1);
+        (t.img.getData('glow') as Phaser.GameObjects.Image).destroy();
+        this.openSkillChoice();
+      }
+    }
+  }
+
+  /** Pausa o jogo e mostra 3 skills para escolher. */
+  openSkillChoice(title?: string, onDone?: () => void) {
+    const unlocked = new Set(loadSave().unlocked);
+    const options: SkillDef[] = rollSkills(this.run.skills, unlocked, 3, Math.random);
+    if (!options.length || this.state !== 'playing') {
+      onDone?.();
+      return;
+    }
+    this.state = 'choosing';
+    this.physics.pause();
+    this.player.anims.pause();
+    new SkillChoice(
+      this,
+      options,
+      this.run.skills,
+      (skill) => {
+        this.run.addSkill(skill.id);
+        this.physics.resume();
+        this.player.anims.resume();
+        this.state = 'playing';
+        floatingText(this, this.player.x, this.player.y - 40, skill.name, '#ffcf3a');
+        onDone?.();
+      },
+      title,
+    );
   }
 
   throwGrenade(x: number, y: number, facing: number, carryVx: number) {
@@ -422,20 +643,30 @@ export class GameScene extends Phaser.Scene {
     if (!g.active) return;
     const { x, y } = g;
     g.destroy();
-    empBlast(this, x, y);
-    this.cameras.main.shake(140, 0.01);
-    this.cameras.main.flash(80, 120, 220, 255);
-    for (const o of [...this.enemies.getChildren()]) {
-      const e = o as Enemy;
-      if (!e.dying && Phaser.Math.Distance.Between(x, y, e.x, e.y) < GRENADE_RADIUS) e.hit(GRENADE_DAMAGE);
+    this.empAt(x, y);
+    // Pendrive Cluster: 3 mini-EMPs espalhados
+    if (this.run.stats.cluster) {
+      [-40, 0, 40].forEach((dx, i) => this.time.delayedCall(160 + i * 90, () => this.empAt(x + dx, y - 6, 0.6)));
     }
-    this.world.explosionAt(x, y, GRENADE_RADIUS);
   }
 
-  enemyInMeleeRange(x: number, y: number, facing: number): Enemy | undefined {
+  /** Pulso EMP: fere robôs e atinge objetos destrutíveis no raio. */
+  empAt(x: number, y: number, size = 1) {
+    empBlast(this, x, y);
+    this.cameras.main.shake(140 * size, 0.01 * size);
+    if (size >= 1) this.cameras.main.flash(80, 120, 220, 255);
+    const radius = GRENADE_RADIUS * size;
+    for (const o of [...this.enemies.getChildren()]) {
+      const e = o as Enemy;
+      if (!e.dying && Phaser.Math.Distance.Between(x, y, e.x, e.y) < radius) e.hit(GRENADE_DAMAGE);
+    }
+    this.world.explosionAt(x, y, radius);
+  }
+
+  enemyInMeleeRange(x: number, y: number, facing: number, range = 30): Enemy | undefined {
     return (this.enemies.getChildren() as Enemy[]).find((e) => {
       const dx = e.x - x;
-      return !e.dying && dx * facing >= -6 && Math.abs(dx) < 30 && Math.abs(e.y - y) < 24;
+      return !e.dying && dx * facing >= -6 && Math.abs(dx) < range && Math.abs(e.y - y) < 24;
     });
   }
 
@@ -448,7 +679,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   addScore(points: number, x: number, y: number) {
-    this.score += points;
+    this.run.score += points;
     floatingText(this, x, y, String(points), '#ffe066');
   }
 
@@ -458,8 +689,8 @@ export class GameScene extends Phaser.Scene {
       this.player.setWeapon('overclock');
       floatingText(this, crate.x, crate.y - 16, 'OVERCLOCK!', '#ff8cf5');
     } else {
-      this.player.bombs += 10;
-      floatingText(this, crate.x, crate.y - 16, 'BOMBAS +10', '#9fd0ff');
+      this.run.bombs += 5;
+      floatingText(this, crate.x, crate.y - 16, 'PENDRIVES +5', '#9fd0ff');
     }
     this.addScore(500, crate.x, crate.y);
     crate.destroy();
@@ -475,55 +706,76 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  // ---------- Vida, morte e fim de fase ----------
-
-  private killPlayer() {
-    if (this.player.dead) return;
-    this.player.die();
-    this.cameras.main.shake(150, 0.006);
-    this.time.delayedCall(1300, () => {
-      if (this.state !== 'playing') return;
-      this.lives--;
-      if (this.lives <= 0) {
-        this.gameOver();
-        return;
-      }
-      this.timeLeft = START_TIME;
-      this.player.respawn(this.safeGroundX(this.cameras.main.scrollX + 70), 40, this.time.now);
-    });
-  }
-
-  /** Garante que o respawn caia em chão firme (não em um buraco). */
-  private safeGroundX(x: number) {
-    const seg = this.level.ground.find((g) => x >= g.x + 16 && x <= g.x + g.w - 16);
-    if (seg) return x;
-    const next = this.level.ground.find((g) => g.x > x);
-    return next ? next.x + 24 : x;
-  }
-
-  private gameOver() {
-    this.state = 'gameover';
-    this.physics.pause();
-    this.showBanner('GAME OVER', 'ENTER PARA RECOMEÇAR');
-  }
+  // ---------- Fim de missão / fim de run ----------
 
   private missionClear() {
     this.state = 'clear';
     this.physics.pause();
     this.player.anims.play('hero-idle');
-    this.score += 5000 + this.timeLeft * 100;
-    const last = this.missionIndex >= MISSIONS.length - 1;
-    this.showBanner('MISSÃO CUMPRIDA!', last ? 'O MUNDO FOI SALVO! ENTER' : 'ENTER: PROXIMA MISSÃO');
+    this.run.score += 5000;
+    const last = this.run.mission >= MISSIONS.length - 1;
+    if (last) {
+      this.run.bank(true);
+      this.showSummary('O MUNDO FOI SALVO!', '#7aff9a');
+    } else {
+      this.showBanner('MISSÃO CUMPRIDA!', 'ENTER: PROXIMA MISSÃO');
+    }
   }
 
-  /** ENTER depois do fim: próxima missão, ou volta ao início. */
+  /** O herói caiu: a run termina e os fragmentos vão para o Laboratório. */
+  private runOver() {
+    if (this.state === 'gameover') return;
+    this.state = 'gameover';
+    this.time.delayedCall(1200, () => {
+      this.physics.pause();
+      this.run.bank(false);
+      this.showSummary('RUN ENCERRADA', '#ff5a5a');
+    });
+  }
+
+  private showSummary(title: string, color: string) {
+    const run = this.run;
+    const s = Math.floor(run.timeMs / 1000);
+    const lines = [
+      `MISSÃO ALCANÇADA  ${run.mission + 1}/${MISSIONS.length}`,
+      `ROBOS DESTRUIDOS  ${run.kills}`,
+      `SKILLS            ${Object.keys(run.skills).length}`,
+      `TEMPO             ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`,
+      `PONTOS            ${run.score}`,
+      '',
+      `FRAGMENTOS  +${run.fragments}`,
+    ];
+    this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x05040c, 0.7).setOrigin(0).setScrollFactor(0).setDepth(199);
+    this.add
+      .text(GAME_WIDTH / 2, 50, title, { fontFamily: FONT, fontSize: '18px', color })
+      .setOrigin(0.5)
+      .setStroke('#000000', 5)
+      .setScrollFactor(0)
+      .setDepth(200);
+    this.add
+      .text(GAME_WIDTH / 2, 138, lines.join('\n'), { fontFamily: FONT, fontSize: '8px', color: '#e8e0ff', lineSpacing: 5 })
+      .setOrigin(0.5)
+      .setStroke('#000000', 3)
+      .setScrollFactor(0)
+      .setDepth(200);
+    const press = this.add
+      .text(GAME_WIDTH / 2, 226, 'ENTER: LABORATORIO', { fontFamily: FONT, fontSize: '8px', color: '#ffcf3a' })
+      .setOrigin(0.5)
+      .setStroke('#000000', 3)
+      .setScrollFactor(0)
+      .setDepth(200);
+    this.tweens.add({ targets: press, alpha: 0.2, duration: 500, yoyo: true, repeat: -1 });
+  }
+
+  /** ENTER depois do fim: próxima missão da run ou Laboratório. */
   private advance() {
-    if (this.state === 'clear' && this.missionIndex < MISSIONS.length - 1) {
-      this.scene.restart({ mission: this.missionIndex + 1, score: this.score, lives: this.lives } satisfies GameInit);
-    } else if (this.state === 'clear') {
-      this.scene.start('Menu');
+    const last = this.run.mission >= MISSIONS.length - 1;
+    if (this.state === 'clear' && !last) {
+      this.run.mission++;
+      if (upgradeLevel(loadSave(), 'repair')) this.run.heal(2);
+      this.scene.restart({ run: this.run } satisfies GameInit);
     } else {
-      this.scene.restart({ mission: this.missionIndex } satisfies GameInit);
+      this.scene.start('Lab');
     }
   }
 
