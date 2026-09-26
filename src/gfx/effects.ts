@@ -26,21 +26,40 @@ export function explosion(scene: Phaser.Scene, x: number, y: number, size = 1) {
   scene.time.delayedCall(900, () => debris.destroy());
 }
 
-export function muzzleFlash(scene: Phaser.Scene, x: number, y: number, angle: number) {
-  const s = playOnce(scene, x, y, 'muzzle', 12).setOrigin(0, 0.5).setRotation(angle);
+export function muzzleFlash(scene: Phaser.Scene, x: number, y: number, angle: number, anim = 'muzzle', tint?: number) {
+  const s = playOnce(scene, x, y, anim, 12).setRotation(angle);
+  if (anim === 'muzzle') s.setOrigin(0, 0.5);
   if (Math.abs(angle) > Math.PI / 2) s.setFlipY(true);
+  if (tint !== undefined) s.setTint(tint);
 }
 
-export function impactSpark(scene: Phaser.Scene, x: number, y: number) {
-  playOnce(scene, x, y, 'spark', 12);
+export function impactSpark(scene: Phaser.Scene, x: number, y: number, anim = 'spark') {
+  playOnce(scene, x, y, anim, 12);
+}
+
+/** Pulso eletromagnético do pendrive (granada do herói). */
+export function empBlast(scene: Phaser.Scene, x: number, y: number) {
+  playOnce(scene, x, y - 10, 'emp', 20).setBlendMode(Phaser.BlendModes.ADD);
+  const bits = scene.add
+    .particles(x, y - 10, 'bits', {
+      frame: [0, 1],
+      speed: { min: 60, max: 180 },
+      lifespan: { min: 300, max: 700 },
+      alpha: { start: 1, end: 0 },
+      tint: [0x8ff0ff, 0xb890ff, 0xffffff],
+      emitting: false,
+    })
+    .setDepth(21);
+  bits.explode(22);
+  scene.time.delayedCall(900, () => bits.destroy());
 }
 
 export function dustPuff(scene: Phaser.Scene, x: number, y: number, scale = 1) {
   playOnce(scene, x, y - 5 * scale, 'puff', 9).setScale(scale).setAlpha(0.85);
 }
 
-export function slash(scene: Phaser.Scene, x: number, y: number, facing: number) {
-  const s = scene.add.image(x, y, 'fx_slash').setFlipX(facing < 0).setDepth(12);
+export function slash(scene: Phaser.Scene, x: number, y: number, facing: number, tint = 0xffffff) {
+  const s = scene.add.image(x, y, 'fx_slash').setFlipX(facing < 0).setDepth(12).setTint(tint);
   scene.tweens.add({ targets: s, alpha: 0, duration: 160, onComplete: () => s.destroy() });
 }
 

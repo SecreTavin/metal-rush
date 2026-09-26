@@ -11,10 +11,6 @@ export function generateFx(scene: Phaser.Scene) {
   generatePuff(scene);
   generateHudParts(scene);
 
-  makeTexture(scene, 'casing', 2, 1, (ctx) => {
-    ctx.fillStyle = '#ffd84a';
-    ctx.fillRect(0, 0, 2, 1);
-  });
   makeTexture(scene, 'mote', 2, 2, (ctx) => {
     ctx.fillStyle = '#fff8d8';
     ctx.fillRect(0, 0, 2, 2);

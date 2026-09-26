@@ -6,7 +6,7 @@ import { Enemy } from '../entities/Enemy';
 import { ENEMIES } from '../entities/enemyTypes';
 import type { WeaponDef } from '../entities/weapons';
 import { LEVEL_1, LevelData } from '../level/level1';
-import { dustPuff, explosion, floatingText, impactSpark, muzzleFlash, slash } from '../gfx/effects';
+import { dustPuff, empBlast, floatingText, impactSpark, muzzleFlash, slash } from '../gfx/effects';
 import { layerWidth, PARALLAX } from '../gfx/art/scenery';
 import { blockTexture, GROUND_H, ledgeTexture, pillarTexture } from '../gfx/art/props';
 import { Hud } from '../ui/Hud';
@@ -27,7 +27,7 @@ const FOREGROUND_PARALLAX = 1.25;
 /** Camadas de profundidade (quanto maior, mais na frente). */
 const DEPTH = {
   sky: -10, far: -9, rays: -8, mid: -7, near: -6, pit: -5, decor: -4, pillar: -3, ground: -2, lip: -1,
-  pickup: 8, casing: 11, ambient: 30, foreground: 40,
+  pickup: 8, bits: 11, ambient: 30, foreground: 40,
 };
 
 /** Converte os argumentos genéricos dos callbacks de colisão do Phaser. */
@@ -49,7 +49,7 @@ export class GameScene extends Phaser.Scene {
   private enemyBullets!: Phaser.Physics.Arcade.Group;
   private grenades!: Phaser.Physics.Arcade.Group;
   private pickups!: Phaser.Physics.Arcade.Group;
-  private casings!: Phaser.GameObjects.Particles.ParticleEmitter;
+  private bits!: Phaser.GameObjects.Particles.ParticleEmitter;
   private spawnIndex = 0;
   private hud!: Hud;
   private enterKey!: Phaser.Input.Keyboard.Key;
@@ -75,7 +75,7 @@ export class GameScene extends Phaser.Scene {
     this.buildLevel();
     this.createAmbient();
 
-    this.player = new Player(this, 60, GROUND_Y - 18, this.controls);
+    this.player = new Player(this, 60, GROUND_Y - 24, this.controls);
     this.createColliders();
 
     this.cameras.main.setBounds(0, 0, this.level.width, GAME_HEIGHT);
@@ -235,16 +235,18 @@ export class GameScene extends Phaser.Scene {
       .setScrollFactor(0)
       .setDepth(DEPTH.ambient);
 
-    this.casings = this.add
-      .particles(0, 0, 'casing', {
+    // Bits "0/1" que saltam do teclado a cada disparo (no lugar de cápsulas)
+    this.bits = this.add
+      .particles(0, 0, 'bits', {
+        frame: [0, 1],
         lifespan: 650,
-        speed: { min: 50, max: 110 },
+        speed: { min: 30, max: 80 },
         angle: { min: 235, max: 305 },
-        gravityY: 700,
-        rotate: { start: 0, end: 720 },
+        gravityY: 90,
+        alpha: { start: 1, end: 0 },
         emitting: false,
       })
-      .setDepth(DEPTH.casing);
+      .setDepth(DEPTH.bits);
   }
 
   private createColliders() {
@@ -257,7 +259,7 @@ export class GameScene extends Phaser.Scene {
 
     const hitWall = (b: unknown) => {
       const bullet = as<ArcadeImage>(b);
-      impactSpark(this, bullet.x, bullet.y);
+      impactSpark(this, bullet.x, bullet.y, bullet.getData('impact') ?? 'spark');
       bullet.destroy();
     };
     p.overlap(this.playerBullets, this.solids, hitWall);
@@ -268,7 +270,7 @@ export class GameScene extends Phaser.Scene {
       if (enemy.dying) return;
       const bullet = as<ArcadeImage>(b);
       enemy.hit(bullet.getData('damage'));
-      impactSpark(this, bullet.x, bullet.y);
+      impactSpark(this, bullet.x, bullet.y, bullet.getData('impact'));
       bullet.destroy();
     });
 
@@ -323,10 +325,55 @@ export class GameScene extends Phaser.Scene {
 
   spawnPlayerBullet(x: number, y: number, angle: number, weapon: WeaponDef) {
     const b = this.playerBullets.create(x, y, weapon.bullet) as ArcadeImage;
-    b.setRotation(angle).setData('damage', weapon.damage).setDepth(8);
+    b.setRotation(angle).setData('damage', weapon.damage).setData('impact', weapon.impact).setDepth(8);
     b.setVelocity(Math.cos(angle) * weapon.speed, Math.sin(angle) * weapon.speed);
-    muzzleFlash(this, x, y, angle);
-    this.casings.emitParticleAt(this.player.x, this.player.y - 2, 1);
+    muzzleFlash(this, x, y, angle, 'muzzle_code', weapon.bitsTint);
+  }
+
+  emitBits(x: number, y: number, tint: number) {
+    this.bits.setParticleTint(tint);
+    this.bits.emitParticleAt(x, y, 2);
+  }
+
+  /** Cópia translúcida do quadro atual, que some rapidamente (rastro holográfico). */
+  afterimage(sprite: Phaser.GameObjects.Sprite) {
+    const ghost = this.add
+      .image(sprite.x, sprite.y, sprite.texture.key, sprite.frame.name)
+      .setFlipX(sprite.flipX)
+      .setTint(this.player.weapon.bitsTint)
+      .setBlendMode(Phaser.BlendModes.ADD)
+      .setAlpha(0.45)
+      .setDepth(sprite.depth - 1);
+    this.tweens.add({ targets: ghost, alpha: 0, duration: 220, onComplete: () => ghost.destroy() });
+  }
+
+  /** Falha digital quando o herói é atingido: bits voando e barras de interferência. */
+  glitchBurst(x: number, y: number) {
+    const bits = this.add
+      .particles(x, y, 'bits', {
+        frame: [0, 1],
+        speed: { min: 40, max: 160 },
+        lifespan: { min: 400, max: 900 },
+        alpha: { start: 1, end: 0 },
+        tint: [0xff8cf5, 0x8ff0ff, 0xffffff],
+        emitting: false,
+      })
+      .setDepth(21);
+    bits.explode(26);
+    this.time.delayedCall(1000, () => bits.destroy());
+    for (let i = 0; i < 6; i++) {
+      const bar = this.add
+        .rectangle(x + Phaser.Math.Between(-14, 14), y + Phaser.Math.Between(-22, 18), Phaser.Math.Between(10, 26), 2, i % 2 ? 0x8ff0ff : 0xff5aff)
+        .setDepth(21)
+        .setBlendMode(Phaser.BlendModes.ADD);
+      this.tweens.add({ targets: bar, x: bar.x + Phaser.Math.Between(-10, 10), alpha: 0, duration: 260, delay: i * 40, onComplete: () => bar.destroy() });
+    }
+  }
+
+  /** Feixe de teletransporte no respawn. */
+  teleportBeam(x: number) {
+    const beam = this.add.image(x, 0, 'beam').setOrigin(0.5, 0).setDepth(21).setBlendMode(Phaser.BlendModes.ADD).setScale(0.2, 1);
+    this.tweens.add({ targets: beam, scaleX: 1, duration: 150, yoyo: true, hold: 250, onComplete: () => beam.destroy() });
   }
 
   spawnEnemyBullet(x: number, y: number, angle: number, speed: number) {
@@ -336,7 +383,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   throwGrenade(x: number, y: number, facing: number, carryVx: number) {
-    const g = this.grenades.create(x, y, 'grenade') as ArcadeImage;
+    const g = this.grenades.create(x, y, 'usb') as ArcadeImage;
     g.setVelocity(facing * 170 + carryVx * 0.3, -230)
       .setBounce(0.4)
       .setDragX(80)
@@ -349,8 +396,9 @@ export class GameScene extends Phaser.Scene {
     if (!g.active) return;
     const { x, y } = g;
     g.destroy();
-    explosion(this, x, y, 1);
+    empBlast(this, x, y);
     this.cameras.main.shake(140, 0.01);
+    this.cameras.main.flash(80, 120, 220, 255);
     for (const o of [...this.enemies.getChildren()]) {
       const e = o as Enemy;
       if (!e.dying && Phaser.Math.Distance.Between(x, y, e.x, e.y) < GRENADE_RADIUS) e.hit(GRENADE_DAMAGE);
@@ -365,7 +413,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   meleeSlash(x: number, y: number, facing: number) {
-    slash(this, x, y, facing);
+    slash(this, x, y, facing, 0x8ff0ff);
   }
 
   dust(x: number, y: number, scale = 1) {
@@ -380,8 +428,8 @@ export class GameScene extends Phaser.Scene {
   private collectPickup(crate: ArcadeImage) {
     if (!crate.active || this.player.dead) return;
     if (crate.getData('kind') === 'heavy') {
-      this.player.setWeapon('heavy');
-      floatingText(this, crate.x, crate.y - 16, 'HEAVY MACHINE GUN!', '#ff6a3a');
+      this.player.setWeapon('overclock');
+      floatingText(this, crate.x, crate.y - 16, 'OVERCLOCK!', '#ff8cf5');
     } else {
       this.player.bombs += 10;
       floatingText(this, crate.x, crate.y - 16, 'BOMBAS +10', '#9fd0ff');

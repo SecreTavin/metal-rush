@@ -1,7 +1,10 @@
 export interface WeaponDef {
   label: string;
-  texture: string;
+  /** Quadro do MacBook (0 normal, 2 overclock). O quadro 1 é o clarão do disparo. */
+  laptopFrame: number;
   bullet: string;
+  /** Efeito de impacto do projétil. */
+  impact: string;
   /** Intervalo mínimo entre tiros segurando o botão (ms). */
   fireRate: number;
   speed: number;
@@ -9,28 +12,34 @@ export interface WeaponDef {
   /** Variação aleatória do ângulo (radianos). */
   spread: number;
   ammo: number;
+  /** Cor dos bits que saltam do teclado a cada disparo. */
+  bitsTint: number;
 }
 
 export const WEAPONS = {
-  pistol: {
-    label: 'PISTOLA',
-    texture: 'gun_pistol',
-    bullet: 'bullet',
-    fireRate: 220,
-    speed: 420,
+  code: {
+    label: 'CODE BOLT',
+    laptopFrame: 0,
+    bullet: 'bolt_code',
+    impact: 'bolt_hit',
+    fireRate: 200,
+    speed: 400,
     damage: 1,
     spread: 0,
     ammo: Infinity,
+    bitsTint: 0x8ff0ff,
   },
-  heavy: {
-    label: 'HEAVY MACHINE GUN',
-    texture: 'gun_heavy',
-    bullet: 'bullet_heavy',
+  overclock: {
+    label: 'OVERCLOCK',
+    laptopFrame: 2,
+    bullet: 'bolt_oc',
+    impact: 'bolt_hit',
     fireRate: 70,
     speed: 480,
     damage: 1,
-    spread: 0.08,
+    spread: 0.07,
     ammo: 200,
+    bitsTint: 0xff8cf5,
   },
 } satisfies Record<string, WeaponDef>;
 

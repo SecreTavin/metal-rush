@@ -90,11 +90,6 @@ const OUTLINE = '#16161c';
 
 export const CHARACTERS: { key: string; head: keyof typeof HEADS; palette: Palette }[] = [
   {
-    key: 'player',
-    head: 'bandana',
-    palette: { k: OUTLINE, s: SKIN, r: '#d7362b', g: '#4d7b3b', G: '#2f5424', b: '#35598f' },
-  },
-  {
     key: 'enemy_soldier',
     head: 'helmet',
     palette: { k: OUTLINE, s: SKIN, r: '#6d6b3b', g: '#b89c5c', G: '#846c3c', b: '#6d6b3b' },
@@ -109,21 +104,6 @@ export const CHARACTERS: { key: string; head: keyof typeof HEADS; palette: Palet
 // ---------- Armas e projéteis ----------
 
 const METAL: Palette = { k: OUTLINE, m: '#9aa0a8', M: '#5b5f66', w: '#dfe6ee' };
-
-const GUN_PISTOL = [
-  'kkkkkkkk',
-  'kmmmmmmk',
-  'kMkkkkk.',
-  'kk......',
-];
-
-const GUN_HEAVY = [
-  '..kkkkkkkkkkk.',
-  'kkMMMMMMMMMMMk',
-  'kMmmmmmmmmmmmk',
-  'kMkkkMkkkkkkk.',
-  'kk..kk........',
-];
 
 const GUN_RIFLE = [
   'kkkkkkkkkkk.',
@@ -163,14 +143,6 @@ const CRATE_B = [
   'kkkkkkkkkk',
 ];
 
-const GRENADE = [
-  '..kk.',
-  '.kGGk',
-  'kGgGk',
-  'kGGGk',
-  '.kkk.',
-];
-
 const FLAG = [
   'kyyyyyyyy',
   'kyrrrrryy',
@@ -184,15 +156,10 @@ const FLAG = [
 export function generateTextures(scene: Phaser.Scene) {
   for (const c of CHARACTERS) pixelSheet(scene, c.key, characterFrames(c.head), c.palette);
 
-  pixelTexture(scene, 'gun_pistol', GUN_PISTOL, METAL);
-  pixelTexture(scene, 'gun_heavy', GUN_HEAVY, METAL);
   pixelTexture(scene, 'gun_rifle', GUN_RIFLE, { ...METAL, m: '#7a5a3a', M: '#4a3522' });
   pixelTexture(scene, 'knife', KNIFE, METAL);
 
-  pixelTexture(scene, 'bullet', ['yyyw', 'yyyw'], { y: '#ffd84a', w: '#fff7d0' });
-  pixelTexture(scene, 'bullet_heavy', ['ooyyyw', 'ooyyyw'], { o: '#ff8a2a', y: '#ffd84a', w: '#fff7d0' });
   pixelTexture(scene, 'bullet_enemy', ['.o.', 'owo', '.o.'], { o: '#ff5a2a', w: '#fff0c0' });
-  pixelTexture(scene, 'grenade', GRENADE, { k: OUTLINE, g: '#7fae5a', G: '#3f6b2a' });
 
   const crate = { k: OUTLINE, y: '#ffcf3a', r: '#c22b22' };
   pixelTexture(scene, 'crate_heavy', CRATE_H, crate);

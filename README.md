@@ -17,9 +17,9 @@ Abra http://localhost:5173. Use `?debug` na URL para ver as caixas de colisão.
 |---|---|
 | Mover | Setas / WASD |
 | Mirar | Cima (e Baixo no ar) |
-| Atirar / faca (de perto) | J / Z |
+| Atirar / golpe com o MacBook (de perto) | J / Z |
 | Pular | K / X / Espaço |
-| Granada | L / C |
+| Pendrive EMP (granada) | L / C |
 
 ## Estrutura
 
@@ -32,7 +32,7 @@ src/
     MenuScene.ts        tela de título
     GameScene.ts        gameplay: fase, câmera, colisões, HUD
   entities/
-    Player.ts           personagem principal
+    Player.ts           personagem principal (corpo + MacBook giratório + aura)
     Enemy.ts            IA dos inimigos
     enemyTypes.ts       catálogo de inimigos (stats e comportamento)
     weapons.ts          catálogo de armas
@@ -47,9 +47,31 @@ src/
       scenery.ts        camadas de parallax (céu, selva distante, plano médio, ruínas)
       props.ts          chão, buracos, plataformas, coberturas, decoração, primeiro plano
       fx.ts             sprites de efeitos e peças do HUD
+      heroFx.ts         efeitos do herói: projéteis de código, bits, EMP, aura, teletransporte
   ui/Hud.ts             HUD estilo arcade (pontos, barra, ARMS/BOMB, cronômetro, vidas)
   input/Controls.ts     mapeamento de teclas -> ações
 ```
+
+### Personagem principal
+
+Dev de moletom roxo com capuz, óculos inteligentes e um **MacBook como arma**, com toques cibernéticos
+(circuitos brilhantes no moletom, aura holográfica, anel de hover nos pés, varredura e rastro de luz).
+
+- **CODE BOLT** (padrão): o MacBook dispara projéteis `</>`; no lugar de cápsulas, saltam bits "0/1" do teclado.
+- **OVERCLOCK** (caixa "H"): rajada rápida de projéteis `>>` magenta; a aura muda de cor.
+- **Golpe**: inimigo colado leva uma pancada com o MacBook.
+- **Pendrive EMP**: a granada é um pendrive que explode num pulso eletromagnético.
+- Ao ser atingido, o personagem "glitcha"; ao voltar, é teletransportado por um feixe de luz.
+
+O sprite nasce do esboço em `tools/hero/reference_east.png`. Para regenerar após mudanças:
+
+```bash
+pip install pillow
+python3 tools/hero/build_hero.py
+```
+
+O script recolore o moletom, separa o MacBook (que vira uma peça giratória para mirar), desenha as
+pernas de cada quadro de animação e adiciona os circuitos. Saída em `public/sprites/`.
 
 ### Visual
 
