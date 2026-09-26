@@ -2,6 +2,9 @@ import type { EnemyType } from '../entities/enemyTypes';
 
 export type ThemeId = 'city' | 'factory' | 'core';
 
+/** Chefes: um por missão. */
+export type BossType = 'sentinel' | 'forger' | 'eye';
+
 /** Coberturas sólidas apoiadas no chão (bloqueiam tiros). */
 export type BlockKind = 'barricade' | 'crate' | 'container' | 'server';
 
@@ -68,6 +71,8 @@ export interface LevelData {
   pickups: { x: number; kind: 'heavy' | 'bombs'; y?: number }[];
   /** Terminais de upgrade (escolha 1 de 3 skills). */
   terminals?: { x: number }[];
+  /** Arena do chefe: a câmera trava em x e o chefe aparece. */
+  boss?: { x: number; type: BossType };
   /** Decoração atrás dos personagens (as chaves dependem do tema). */
   decor: { x: number; kind: string }[];
   /** Elementos na frente dos personagens (parallax mais rápido). */

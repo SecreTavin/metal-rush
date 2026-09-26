@@ -22,16 +22,61 @@ Abra http://localhost:5173. Use `?debug` na URL para ver as caixas de colisão.
 | Atirar / golpe com o MacBook (de perto) | J / Z |
 | Pular | K / X / Espaço |
 | Pendrive EMP (granada) | L / C |
+| Usar terminal de upgrade | Cima |
+| Esquiva (skill Rollback) | Shift / I |
+
+## Como funciona (Metal Slug + Dead Cells)
+
+Cada partida é uma **run**: você atravessa as 3 missões seguidas, cada uma terminando num **chefe**.
+Morreu, a run acaba e você volta ao **Laboratório** — mas os fragmentos coletados ficam.
+
+- **Vida (HP)**: o herói aguenta alguns golpes; buracos custam 2 de vida.
+- **Skills**: terminais de upgrade na fase e após cada chefe oferecem **3 skills** — escolha 1.
+- **Fragmentos de dados**: caem dos robôs, destrutíveis e chefes. No Laboratório compram
+  melhorias permanentes (vida, pendrives, skill inicial, auto-reparo, mais fragmentos) e liberam novas skills.
+- **Fases por trechos**: cada missão é montada a cada run com trechos embaralhados da fase original,
+  uma sala de upgrade e a arena do chefe. Nenhuma run é igual.
+
+### Skills
+
+| Skill | Efeito |
+|---|---|
+| CLOCK ALTO | Disparos 20% mais rápidos (acumula) |
+| MAIS RAM | +2 de vida máxima |
+| STACK OVERFLOW | 15% de chance de dano x3 |
+| BACKUP | +4 pendrives EMP |
+| TECLADO MECANICO | Golpe do MacBook x3 e com mais alcance |
+| CACHE HIT | Ímã de fragmentos e +50% de valor |
+| GARBAGE COLLECTOR | Robôs podem soltar kits de reparo |
+| MULTITHREAD | +1 projétil por disparo |
+| DEEP LINK | Tiros atravessam robôs |
+| RICOCHETE* | Tiros quicam em paredes e chão |
+| FIREWALL* | Escudo que bloqueia 1 golpe (recarrega) |
+| KERNEL PANIC* | Solta um EMP ao ser atingido |
+| SUDO JUMP* | Pulo duplo |
+| FORK()* | Tiros se dividem ao acertar |
+| ROLLBACK* | Esquiva invencível (SHIFT / I) |
+| PENDRIVE CLUSTER* | EMP solta 3 mini-EMPs |
+
+\* liberadas no Laboratório.
+
+### Chefes
+
+| Missão | Chefe | Padrões |
+|---|---|---|
+| 1 | **Sentinela S-01** | Mecha bípede: rajada de plasma, chuva de mísseis com alvos no chão, pisão com ondas de choque |
+| 2 | **Forjador** | Fornalha-mãe: martelos no teto, metal derretido em arco, núcleo exposto (ponto fraco) |
+| 3 | **O Olho** | A própria IA: laser que varre o chão, anéis de projéteis, mergulho e invocação de robôs |
+
+Todos entram na fase 2 abaixo de 50% de vida. Partes blindadas mostram "BLOQUEADO".
 
 ## Missões
 
 | # | Missão | Ambiente |
 |---|---|---|
-| 1 | **Ruínas de Neo-SP** | Metrópole em ruínas à noite: chuva, relâmpagos, neon, Torre da IA, monotrilho, carros voadores, holofotes e drones |
-| 2 | **Fábrica de Sintéticos** | Galpão onde os robôs são fabricados: linha de montagem, fornalhas, engrenagens, ponte rolante, solda e metal derretido |
-| 3 | **Núcleo da IA** | O coração digital: o Olho gigante que segue o jogador, torres de servidores, chuva de dados e interferências |
-
-Ao terminar uma missão, ENTER leva à próxima (pontos e vidas continuam). No menu, as teclas **1**, **2** e **3** escolhem a missão.
+| 1 | **Ruínas de Neo-SP** | Metrópole em ruínas à noite: chuva, relâmpagos, neon, Torre da IA, monotrilho, carros voadores |
+| 2 | **Fábrica de Sintéticos** | Galpão onde os robôs são fabricados: linha de montagem, fornalhas, esteiras, prensas |
+| 3 | **Núcleo da IA** | O coração digital: o Olho gigante, torres de servidores, chuva de dados e interferências |
 
 ### Elementos dinâmicos das fases
 
@@ -49,12 +94,23 @@ src/
   main.ts               configuração do Phaser
   scenes/
     BootScene.ts        carrega sprites, gera texturas e animações
-    MenuScene.ts        tela de título e escolha de missão
-    GameScene.ts        gameplay: câmera, colisões, progressão entre missões
+    MenuScene.ts        tela de título
+    LabScene.ts         Laboratório (melhorias e skills entre runs)
+    GameScene.ts        gameplay: câmera, colisões, run, chefes
   level/
     types.ts            formato de uma fase (LevelData)
-    mission1..3.ts      layout de cada missão
-    missions.ts         ordem da campanha
+    mission1..3.ts      fases fonte (bibliotecas de trechos)
+    generator.ts        corta as fases em trechos e monta uma fase nova por run
+    missions.ts         campanha: pontos de corte, salas de upgrade e arenas
+  run/
+    RunState.ts         estado da run (vida, skills, fragmentos)
+    skills.ts           catálogo de skills e efeitos
+    save.ts             progresso permanente (localStorage) e melhorias do Laboratório
+    art.ts              escudo, fragmentos, cura, terminal de upgrade
+  bosses/
+    Boss.ts             base: zonas fracas/blindadas, fase 2, morte
+    Sentinel.ts, Forger.ts, Eye.ts
+    art.ts              arte dos chefes em peças animadas
   themes/
     Theme.ts            interface de tema, camadas de parallax, profundidades
     city.ts             Missão 1: cidade (arte, fundo animado, chuva)
@@ -78,10 +134,12 @@ src/
 
 ### Criando ou editando uma fase
 
-Cada missão é um objeto `LevelData` em `src/level/`. Nele você posiciona chão (e buracos),
-plataformas, plataformas móveis, perigos, destrutíveis, interativos, inimigos, emboscadas,
-itens e decoração — tudo por coordenadas x (e y quando necessário; o chão fica em y=226).
-O visual vem do tema indicado em `theme`.
+As fases fonte (`src/level/mission1..3.ts`) posicionam chão (e buracos), plataformas, perigos,
+destrutíveis, interativos, inimigos, emboscadas, itens e decoração por coordenadas x (o chão fica em y=226).
+Em `src/level/missions.ts`, os `cuts` dizem onde cortar em trechos — escolha pontos em chão contínuo,
+sem elementos atravessando o corte. Salas de upgrade e arenas são trechos declarados ali mesmo.
+
+Em modo de desenvolvimento (`npm run dev`), as teclas **1**, **2** e **3** no menu começam uma run direto na missão.
 
 ### Personagem principal
 

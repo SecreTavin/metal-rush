@@ -28,6 +28,7 @@ interface CityLayout {
   searchlights: { x: number; y: number }[];
   trackY: number;
 }
+let lastLevelId = '';
 const layouts = new Map<string, CityLayout>();
 
 // ============================================================= texturas
@@ -933,7 +934,10 @@ export const cityTheme: Theme = {
   pitGlow: 0x30c070,
 
   generate(scene, level) {
-    if (layouts.has(level.id) && scene.textures.exists('city_near')) return;
+    // Regera só quando a fase muda (a largura do cenário varia a cada run)
+    if (lastLevelId === level.id && scene.textures.exists('city_near')) return;
+    lastLevelId = level.id;
+    layouts.clear();
     const layout: CityLayout = { antennas: [], towerEye: { x: 0, y: 0 }, searchlights: [], trackY: 138 };
     layouts.set(level.id, layout);
     sky(scene);

@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { FONT, GAME_HEIGHT, GAME_WIDTH } from '../config';
-import { MISSIONS } from '../level/missions';
+import { MISSION_COUNT, MISSION_SOURCES } from '../level/missions';
 import { THEMES } from '../themes';
 import type { GameInit } from './GameScene';
 import { RunState } from '../run/RunState';
@@ -14,9 +14,9 @@ export class MenuScene extends Phaser.Scene {
     const cx = GAME_WIDTH / 2;
 
     // Fundo: cenário da primeira missão deslizando lentamente
-    const first = MISSIONS[0];
+    const first = MISSION_SOURCES[0];
     const theme = THEMES[first.theme];
-    theme.generate(this, first);
+    theme.generate(this, first.layout);
     theme.menuLayers.forEach((key, i) => {
       const img = this.add.image(0, 0, key).setOrigin(0);
       if (i > 0) this.tweens.add({ targets: img, x: -(200 + i * 260), duration: 70000, yoyo: true, repeat: -1 });
@@ -66,7 +66,7 @@ export class MenuScene extends Phaser.Scene {
     this.input.once('pointerdown', toLab);
     // Atalho de desenvolvimento: teclas 1..N começam uma run direto na missão
     if (import.meta.env.DEV) {
-      MISSIONS.forEach((_, i) => {
+      Array.from({ length: MISSION_COUNT }).forEach((_, i) => {
         this.input.keyboard!.once(`keydown-${['ONE', 'TWO', 'THREE', 'FOUR', 'FIVE'][i]}`, () => {
           const run = new RunState();
           run.mission = i;

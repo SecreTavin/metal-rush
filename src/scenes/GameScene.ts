@@ -5,7 +5,7 @@ import { Player } from '../entities/Player';
 import { Enemy } from '../entities/Enemy';
 import { ENEMIES, EnemyType } from '../entities/enemyTypes';
 import type { WeaponDef } from '../entities/weapons';
-import { MISSIONS } from '../level/missions';
+import { MISSION_COUNT, missionLevel } from '../level/missions';
 import type { LevelData } from '../level/types';
 import { dustPuff, empBlast, explosion, floatingText, impactSpark, muzzleFlash, slash } from '../gfx/effects';
 import { DEPTH, PARALLAX, Theme } from '../themes/Theme';
@@ -16,6 +16,10 @@ import { SkillChoice } from '../ui/SkillChoice';
 import { RunState } from '../run/RunState';
 import { loadSave, upgradeLevel } from '../run/save';
 import { rollSkills, SkillDef } from '../run/skills';
+import type { Boss } from '../bosses/Boss';
+import { Sentinel } from '../bosses/Sentinel';
+import { Forger } from '../bosses/Forger';
+import { Eye } from '../bosses/Eye';
 
 type ArcadeImage = Phaser.Physics.Arcade.Image;
 type GameState = 'playing' | 'choosing' | 'gameover' | 'clear';
@@ -32,6 +36,8 @@ const GROUND_H = GAME_HEIGHT - GROUND_Y;
 const PIT_DAMAGE = 2;
 /** Vida extra dos robôs a cada missão (dificuldade crescente). */
 const ENEMY_HP_PER_MISSION = 0.4;
+/** Vida base dos chefes (cresce um pouco com o número de skills da run). */
+const BOSS_HP = { sentinel: 160, forger: 100, eye: 180 } as const;
 
 /** Converte os argumentos genéricos dos callbacks de colisão do Phaser. */
 const as = <T>(o: unknown) => o as T;
@@ -59,6 +65,10 @@ export class GameScene extends Phaser.Scene {
   debris!: Phaser.Physics.Arcade.Group;
   /** Fragmentos de dados e kits de cura. */
   loot!: Phaser.Physics.Arcade.Group;
+  /** Zonas de acerto do chefe atual. */
+  bossHurt!: Phaser.Physics.Arcade.Group;
+  boss: Boss | null = null;
+  private bossStarted = false;
   private bits!: Phaser.GameObjects.Particles.ParticleEmitter;
   private spawnIndex = 0;
   private lastSafeX = 60;
@@ -76,13 +86,16 @@ export class GameScene extends Phaser.Scene {
   create(data: GameInit = {}) {
     // A instância da cena é reaproveitada no restart: resetar estado aqui.
     this.run = data.run ?? new RunState();
-    this.level = MISSIONS[Phaser.Math.Clamp(this.run.mission, 0, MISSIONS.length - 1)];
+    this.run.mission = Phaser.Math.Clamp(this.run.mission, 0, MISSION_COUNT - 1);
+    this.level = missionLevel(this.run.mission, this.run.seed);
     this.theme = THEMES[this.level.theme];
     this.state = 'playing';
     this.spawnIndex = 0;
     this.cameraLock = null;
     this.lastSafeX = 60;
     this.terminals = [];
+    this.boss = null;
+    this.bossStarted = false;
     this.physics.resume();
 
     this.theme.generate(this, this.level);
@@ -122,9 +135,10 @@ export class GameScene extends Phaser.Scene {
       this.updateLoot();
       this.updateTerminals();
       this.trackSafeGround();
+      this.updateBoss(time, delta);
 
       if (!this.player.dead && this.player.y > GAME_HEIGHT + 30) this.fallIntoPit();
-      if (!this.player.dead && this.player.x >= this.level.goalX && this.cameraLock === null) this.missionClear();
+      if (!this.player.dead && this.player.x >= this.level.goalX && this.cameraLock === null && !this.boss) this.missionClear();
     } else if ((this.state === 'gameover' || this.state === 'clear') && Phaser.Input.Keyboard.JustDown(this.enterKey)) {
       this.advance();
       return;
@@ -146,6 +160,7 @@ export class GameScene extends Phaser.Scene {
     this.pickups = this.physics.add.group();
     this.debris = this.physics.add.group({ bounceY: 0.35, dragX: 70 });
     this.loot = this.physics.add.group({ bounceY: 0.4, dragX: 120 });
+    this.bossHurt = this.physics.add.group({ allowGravity: false, immovable: true });
   }
 
   private buildLevel() {
@@ -282,6 +297,20 @@ export class GameScene extends Phaser.Scene {
     p.overlap(this.grenades, this.enemies, (g, e) => {
       if (!as<Enemy>(e).dying) this.explodeGrenade(as<ArcadeImage>(g));
     });
+
+    p.overlap(this.playerBullets, this.bossHurt, (b, z) => {
+      const bullet = as<ArcadeImage>(b);
+      const boss = as<Phaser.GameObjects.Zone>(z).getData('boss') as Boss;
+      if (!bullet.active || boss.dying) return;
+      const zone = boss.zoneAt(bullet.x, bullet.y) ?? as<Phaser.GameObjects.Zone>(z);
+      const crit = Math.random() < this.run.stats.critChance;
+      if (boss.hit((bullet.getData('damage') as number) * (crit ? 3 : 1), bullet.x, bullet.y, zone)) {
+        impactSpark(this, bullet.x, bullet.y, bullet.getData('impact'));
+        if (crit) floatingText(this, bullet.x, bullet.y - 10, 'CRIT!', '#ffcf3a');
+      }
+      bullet.destroy();
+    });
+    p.overlap(this.grenades, this.bossHurt, (g) => this.explodeGrenade(as<ArcadeImage>(g)));
 
     p.overlap(this.player, this.pickups, (_pl, c) => this.collectPickup(as<ArcadeImage>(c)));
     p.overlap(this.player, this.loot, (_pl, l) => this.collectLoot(as<ArcadeImage>(l)));
@@ -661,6 +690,58 @@ export class GameScene extends Phaser.Scene {
       if (!e.dying && Phaser.Math.Distance.Between(x, y, e.x, e.y) < radius) e.hit(GRENADE_DAMAGE);
     }
     this.world.explosionAt(x, y, radius);
+    if (this.boss && !this.boss.dying) {
+      const zone = this.boss.zoneNear(x, y, radius);
+      if (zone) this.boss.hit(GRENADE_DAMAGE, x, y, zone);
+    }
+  }
+
+  /** Golpe do MacBook no chefe (se houver uma zona colada na frente). */
+  bossMelee(x: number, y: number, facing: number, range: number, damage: number) {
+    if (!this.boss || this.boss.dying) return false;
+    const zone = this.boss.zoneNear(x + facing * range * 0.5, y - 4, range * 0.6);
+    if (!zone) return false;
+    this.boss.hit(damage, x + facing * 18, y - 4, zone);
+    return true;
+  }
+
+  // ---------- Chefes ----------
+
+  private updateBoss(time: number, delta: number) {
+    const b = this.level.boss;
+    if (b && !this.bossStarted && this.cameras.main.scrollX >= b.x - 2) this.startBoss();
+    this.boss?.update(time, delta);
+  }
+
+  private startBoss() {
+    const b = this.level.boss!;
+    this.bossStarted = true;
+    this.cameraLock = b.x;
+    this.events.emit('boss-start', b.type);
+    this.cameras.main.flash(250, 255, 40, 40);
+    this.showBanner('PERIGO!', 'CHEFE SE APROXIMANDO', 1300, '#ff3a3a');
+    const hp = Math.round(BOSS_HP[b.type] * (1 + Object.keys(this.run.skills).length * 0.1));
+    this.time.delayedCall(1500, () => {
+      if (this.state === 'gameover') return;
+      const Cls = { sentinel: Sentinel, forger: Forger, eye: Eye }[b.type];
+      this.boss = new Cls(this, b.x, hp);
+      this.hud.showBoss(this.boss.name);
+    });
+  }
+
+  /** Chefe destruído: libera a câmera, solta fragmentos e abre um terminal de upgrade. */
+  bossDefeated(boss: Boss, x: number, y: number) {
+    this.hud.hideBoss();
+    this.boss = null;
+    this.cameraLock = null;
+    this.run.score += 10000;
+    this.dropFragments(x, y, 25);
+    if (upgradeLevel(loadSave(), 'repair')) {
+      this.run.heal(2);
+      floatingText(this, this.player.x, this.player.y - 40, 'AUTO-REPARO +2', '#7aff9a');
+    }
+    this.showBanner(`${boss.name}`, 'DESTRUIDO!', 2200, '#7aff9a');
+    this.addTerminal(this.level.boss!.x + 240);
   }
 
   enemyInMeleeRange(x: number, y: number, facing: number, range = 30): Enemy | undefined {
@@ -713,7 +794,7 @@ export class GameScene extends Phaser.Scene {
     this.physics.pause();
     this.player.anims.play('hero-idle');
     this.run.score += 5000;
-    const last = this.run.mission >= MISSIONS.length - 1;
+    const last = this.run.mission >= MISSION_COUNT - 1;
     if (last) {
       this.run.bank(true);
       this.showSummary('O MUNDO FOI SALVO!', '#7aff9a');
@@ -737,7 +818,7 @@ export class GameScene extends Phaser.Scene {
     const run = this.run;
     const s = Math.floor(run.timeMs / 1000);
     const lines = [
-      `MISSÃO ALCANÇADA  ${run.mission + 1}/${MISSIONS.length}`,
+      `MISSÃO ALCANÇADA  ${run.mission + 1}/${MISSION_COUNT}`,
       `ROBOS DESTRUIDOS  ${run.kills}`,
       `SKILLS            ${Object.keys(run.skills).length}`,
       `TEMPO             ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`,
@@ -769,10 +850,9 @@ export class GameScene extends Phaser.Scene {
 
   /** ENTER depois do fim: próxima missão da run ou Laboratório. */
   private advance() {
-    const last = this.run.mission >= MISSIONS.length - 1;
+    const last = this.run.mission >= MISSION_COUNT - 1;
     if (this.state === 'clear' && !last) {
       this.run.mission++;
-      if (upgradeLevel(loadSave(), 'repair')) this.run.heal(2);
       this.scene.restart({ run: this.run } satisfies GameInit);
     } else {
       this.scene.start('Lab');

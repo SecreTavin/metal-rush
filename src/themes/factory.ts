@@ -27,6 +27,7 @@ interface FactoryLayout {
   fans: { x: number; y: number }[];
   furnaces: { x: number; y: number }[];
 }
+let lastLevelId = '';
 const layouts = new Map<string, FactoryLayout>();
 
 function hazard(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, size = 4) {
@@ -766,7 +767,10 @@ export const factoryTheme: Theme = {
   pitGlow: 0xff6a20,
 
   generate(scene, level) {
-    if (layouts.has(level.id) && scene.textures.exists('factory_near')) return;
+    // Regera só quando a fase muda (a largura do cenário varia a cada run)
+    if (lastLevelId === level.id && scene.textures.exists('factory_near')) return;
+    lastLevelId = level.id;
+    layouts.clear();
     const layout: FactoryLayout = { railY: 56, craneY: 30, gears: [], welds: [], fans: [], furnaces: [] };
     layouts.set(level.id, layout);
     back(scene, layout);

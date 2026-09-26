@@ -23,6 +23,7 @@ interface CoreLayout {
   pulses: { x0: number; y0: number; x1: number; y1: number }[];
   rains: number[];
 }
+let lastLevelId = '';
 const layouts = new Map<string, CoreLayout>();
 
 const TAUNTS = ['HUMANO DETECTADO', 'RESISTIR E INUTIL', 'VOCE E OBSOLETO', 'SEU CODIGO TEM BUGS', 'ME DE SEU MACBOOK', 'PROCESSANDO... MEDO'];
@@ -607,7 +608,10 @@ export const coreTheme: Theme = {
   pitGlow: 0x2a6aff,
 
   generate(scene, level) {
-    if (layouts.has(level.id) && scene.textures.exists('core_near')) return;
+    // Regera só quando a fase muda (a largura do cenário varia a cada run)
+    if (lastLevelId === level.id && scene.textures.exists('core_near')) return;
+    lastLevelId = level.id;
+    layouts.clear();
     const layout: CoreLayout = { eye: { x: 0, y: 0 }, pulses: [], rains: [] };
     layouts.set(level.id, layout);
     sky(scene);
@@ -715,6 +719,15 @@ export const coreTheme: Theme = {
       const d = Math.min(1, Math.hypot(dx, dy) / 200);
       iris.setPosition(ex + Math.cos(a) * 14 * d, ey + Math.sin(a) * 8 * d);
     });
+    // Quando o chefe aparece, a projeção do Olho se apaga (a IA desce para lutar)
+    const fadeEye = () => {
+      gs.tweens.add({ targets: [ringA, ringB, iris, aura, lidTop, lidBot], alpha: 0, duration: 800 });
+      gs.children.list
+        .filter((o) => (o as Phaser.GameObjects.Image).texture?.key === 'core_eye_ball')
+        .forEach((o) => gs.tweens.add({ targets: o, alpha: 0, duration: 800 }));
+    };
+    gs.events.once('boss-start', fadeEye);
+    gs.events.once(Phaser.Scenes.Events.SHUTDOWN, () => gs.events.off('boss-start', fadeEye));
     const blink = () => {
       gs.tweens.add({ targets: [lidTop, lidBot], scaleY: 0.5, duration: 90, yoyo: true, ease: 'Quad.easeIn' });
       gs.time.delayedCall(Phaser.Math.Between(2500, 6000), blink);

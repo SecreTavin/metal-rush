@@ -225,6 +225,11 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         target.hit(3 * s.meleeMul);
         return;
       }
+      if (this.gs.bossMelee(this.x, this.y, this.facing, s.meleeRange, 3 * s.meleeMul)) {
+        this.meleeStart = time;
+        this.gs.meleeSlash(this.x + this.facing * 18, this.y - 4, this.facing);
+        return;
+      }
     }
 
     const d = this.aimVector();
