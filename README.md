@@ -19,7 +19,8 @@ Abra http://localhost:5173. Use `?debug` na URL para ver as caixas de colisão.
 |---|---|
 | Mover | Setas / WASD |
 | Mirar | Cima (e Baixo no ar) |
-| Atirar / golpe com o MacBook (de perto) | J / Z |
+| Arma principal (MacBook: tiro; golpe se o robô estiver colado) | Clique esquerdo / J / Z |
+| Arma secundária (por enquanto: golpe com o MacBook) | Clique direito / U / V |
 | Pular | K / X / Espaço |
 | Pendrive EMP (granada) | L / C |
 | Usar terminal de upgrade | Cima |

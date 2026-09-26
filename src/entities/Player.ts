@@ -18,6 +18,8 @@ const HURT_INVULNERABILITY = 1200;
 const DASH_TIME = 190;
 const DASH_SPEED = 380;
 const DASH_COOLDOWN = 650;
+/** Intervalo do golpe da arma secundária (MacBook, por enquanto). */
+const BASH_COOLDOWN = 380;
 
 type Aim = 'forward' | 'up' | 'down';
 
@@ -41,6 +43,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private lastShot = 0;
   private flashUntil = 0;
   private meleeStart = -Infinity;
+  private nextSecondary = 0;
   private wasOnGround = true;
   private jumpsLeft = 1;
   private dashUntil = 0;
@@ -150,12 +153,17 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       this.nextTrail = time + 70;
     }
 
-    const tapped = c.justDown('shoot');
+    // Arma principal (clique esquerdo / J / Z)
+    const tapped = c.justDown('primary');
     const since = time - this.lastShot;
     const rate = this.weapon.fireRate * this.stats.fireRateMul;
-    if ((tapped && since > TAP_FIRE_DELAY * this.stats.fireRateMul) || (c.isDown('shoot') && since > rate)) {
+    if ((tapped && since > TAP_FIRE_DELAY * this.stats.fireRateMul) || (c.isDown('primary') && since > rate)) {
       this.attack(time);
     }
+
+    // Arma secundária (clique direito / U / V)
+    const secondary = c.justDown('secondary');
+    if ((secondary || c.isDown('secondary')) && time > this.nextSecondary) this.bash(time);
 
     if (c.justDown('grenade') && this.gs.run.bombs > 0) {
       this.gs.run.bombs--;
@@ -247,6 +255,22 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.flashUntil = time + 60;
 
     if (this.ammo !== Infinity && --this.ammo <= 0) this.setWeapon('code');
+  }
+
+  /**
+   * Arma secundária provisória: golpe com o MacBook a qualquer momento (sem precisar
+   * do inimigo colado). Será substituída pelo sistema de armas.
+   */
+  private bash(time: number) {
+    const s = this.stats;
+    this.nextSecondary = time + BASH_COOLDOWN;
+    this.meleeStart = time;
+    this.gs.meleeSlash(this.x + this.facing * 18, this.y - 4, this.facing);
+    const range = s.meleeRange + 12;
+    const damage = 3 * s.meleeMul;
+    const target = this.gs.enemyInMeleeRange(this.x, this.y, this.facing, range);
+    if (target) target.hit(damage);
+    else this.gs.bossMelee(this.x, this.y, this.facing, range, damage);
   }
 
   setWeapon(key: WeaponKey) {

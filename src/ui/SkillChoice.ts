@@ -42,7 +42,7 @@ export class SkillChoice {
     );
     root.add(
       scene.add
-        .text(GAME_WIDTH / 2, GAME_HEIGHT - 16, '< >  ESCOLHER     J / ENTER  CONFIRMAR', { fontFamily: FONT, fontSize: '8px', color: '#b8b0d8' })
+        .text(GAME_WIDTH / 2, GAME_HEIGHT - 16, '< > OU MOUSE: ESCOLHER    J / ENTER / CLIQUE: CONFIRMAR', { fontFamily: FONT, fontSize: '8px', color: '#b8b0d8' })
         .setOrigin(0.5),
     );
 
@@ -53,6 +53,19 @@ export class SkillChoice {
       const card = this.buildCard(skill, x, GAME_HEIGHT / 2 + 4);
       root.add(card);
       this.cards.push(card);
+      // mouse: passar por cima seleciona, clique esquerdo confirma
+      card.setSize(CARD_W, CARD_H).setInteractive({ useHandCursor: true });
+      card.on(Phaser.Input.Events.GAMEOBJECT_POINTER_OVER, () => {
+        if (this.index !== i && !this.closed) {
+          this.index = i;
+          this.refresh();
+        }
+      });
+      card.on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, (p: Phaser.Input.Pointer) => {
+        if (p.button !== 0) return;
+        this.index = i;
+        this.confirm();
+      });
     });
 
     // entrada animada dos cartões

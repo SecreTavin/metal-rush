@@ -23,6 +23,8 @@ waitForFont().then(() => {
     width: GAME_WIDTH,
     height: GAME_HEIGHT,
     pixelArt: true,
+    // o clique direito é a arma secundária: sem menu do navegador sobre o jogo
+    disableContextMenu: true,
     backgroundColor: '#000000',
     physics: {
       default: 'arcade',

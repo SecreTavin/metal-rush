@@ -46,7 +46,8 @@ export class MenuScene extends Phaser.Scene {
     const controls = [
       'MOVER .......... SETAS / WASD',
       'MIRAR ....... CIMA / BAIXO(AR)',
-      'ATIRAR ............... J / Z',
+      'ARMA 1 ..... CLIQUE ESQ / J / Z',
+      'ARMA 2 ..... CLIQUE DIR / U / V',
       'PULAR ........ K / X / ESPAÇO',
       'PENDRIVE EMP ......... L / C',
       'UPGRADE (TERMINAL) ..... CIMA',

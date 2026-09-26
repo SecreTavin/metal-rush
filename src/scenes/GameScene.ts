@@ -126,6 +126,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   update(time: number, delta: number) {
+    this.controls.update();
     if (this.state === 'playing') {
       this.run.timeMs += delta;
       this.player.update(time);
