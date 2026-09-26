@@ -6,7 +6,7 @@ import { Enemy } from '../entities/Enemy';
 import { ENEMIES } from '../entities/enemyTypes';
 import type { WeaponDef } from '../entities/weapons';
 import { LEVEL_1, LevelData } from '../level/level1';
-import { dustPuff, empBlast, floatingText, impactSpark, muzzleFlash, slash } from '../gfx/effects';
+import { dustPuff, empBlast, explosion, floatingText, impactSpark, muzzleFlash, slash } from '../gfx/effects';
 import { layerWidth, PARALLAX } from '../gfx/art/scenery';
 import { blockTexture, GROUND_H, ledgeTexture, pillarTexture } from '../gfx/art/props';
 import { Hud } from '../ui/Hud';
@@ -49,6 +49,7 @@ export class GameScene extends Phaser.Scene {
   private enemyBullets!: Phaser.Physics.Arcade.Group;
   private grenades!: Phaser.Physics.Arcade.Group;
   private pickups!: Phaser.Physics.Arcade.Group;
+  private debris!: Phaser.Physics.Arcade.Group;
   private bits!: Phaser.GameObjects.Particles.ParticleEmitter;
   private spawnIndex = 0;
   private hud!: Hud;
@@ -147,6 +148,7 @@ export class GameScene extends Phaser.Scene {
     this.enemyBullets = this.physics.add.group({ allowGravity: false });
     this.grenades = this.physics.add.group();
     this.pickups = this.physics.add.group();
+    this.debris = this.physics.add.group({ bounceY: 0.35, dragX: 70 });
   }
 
   private buildLevel() {
@@ -256,6 +258,7 @@ export class GameScene extends Phaser.Scene {
     p.collider(this.enemies, [this.solids, this.platforms]);
     p.collider(this.pickups, [this.solids, this.platforms]);
     p.collider(this.grenades, [this.solids, this.platforms]);
+    p.collider(this.debris, [this.solids, this.platforms]);
 
     const hitWall = (b: unknown) => {
       const bullet = as<ArcadeImage>(b);
@@ -278,11 +281,6 @@ export class GameScene extends Phaser.Scene {
       if (!this.player.isVulnerable(this.time.now)) return;
       as<ArcadeImage>(b).destroy();
       this.killPlayer();
-    });
-
-    p.overlap(this.player, this.enemies, (_pl, e) => {
-      const enemy = as<Enemy>(e);
-      if (!enemy.dying && enemy.def.contactDamage && this.player.isVulnerable(this.time.now)) this.killPlayer();
     });
 
     p.overlap(this.grenades, this.enemies, (g, e) => {
@@ -315,7 +313,7 @@ export class GameScene extends Phaser.Scene {
     const edge = this.cameras.main.scrollX + GAME_WIDTH + 20;
     while (this.spawnIndex < spawns.length && spawns[this.spawnIndex].x < edge) {
       const s = spawns[this.spawnIndex++];
-      const enemy = new Enemy(this, s.x, s.y ?? GROUND_Y - 18, ENEMIES[s.type]);
+      const enemy = new Enemy(this, s.x, s.y ?? GROUND_Y - 27, ENEMIES[s.type]);
       this.enemies.add(enemy);
       enemy.setupBody();
     }
@@ -361,9 +359,13 @@ export class GameScene extends Phaser.Scene {
       .setDepth(21);
     bits.explode(26);
     this.time.delayedCall(1000, () => bits.destroy());
+    this.glitchBars(x, y, [0x8ff0ff, 0xff5aff]);
+  }
+
+  private glitchBars(x: number, y: number, colors: number[]) {
     for (let i = 0; i < 6; i++) {
       const bar = this.add
-        .rectangle(x + Phaser.Math.Between(-14, 14), y + Phaser.Math.Between(-22, 18), Phaser.Math.Between(10, 26), 2, i % 2 ? 0x8ff0ff : 0xff5aff)
+        .rectangle(x + Phaser.Math.Between(-14, 14), y + Phaser.Math.Between(-22, 18), Phaser.Math.Between(10, 26), 2, colors[i % colors.length])
         .setDepth(21)
         .setBlendMode(Phaser.BlendModes.ADD);
       this.tweens.add({ targets: bar, x: bar.x + Phaser.Math.Between(-10, 10), alpha: 0, duration: 260, delay: i * 40, onComplete: () => bar.destroy() });
@@ -377,9 +379,35 @@ export class GameScene extends Phaser.Scene {
   }
 
   spawnEnemyBullet(x: number, y: number, angle: number, speed: number) {
-    const b = this.enemyBullets.create(x, y, 'bullet_enemy') as ArcadeImage;
-    b.setDepth(8).setVelocity(Math.cos(angle) * speed, Math.sin(angle) * speed);
-    muzzleFlash(this, x, y, angle);
+    const b = this.enemyBullets.create(x, y, 'plasma') as ArcadeImage;
+    b.setDepth(8).setRotation(angle).setVelocity(Math.cos(angle) * speed, Math.sin(angle) * speed);
+    b.body!.setSize(8, 4);
+    muzzleFlash(this, x, y, angle, 'muzzle_plasma');
+  }
+
+  /** Dano vindo de ataques corpo a corpo dos inimigos. */
+  hurtPlayer() {
+    if (this.state === 'playing' && this.player.isVulnerable(this.time.now)) this.killPlayer();
+  }
+
+  clawSlash(x: number, y: number, facing: number) {
+    const s = this.add.image(x, y, 'claw_slash').setFlipX(facing < 0).setDepth(12).setBlendMode(Phaser.BlendModes.ADD);
+    this.tweens.add({ targets: s, alpha: 0, duration: 180, onComplete: () => s.destroy() });
+  }
+
+  /** Robô destruído: explosão pequena e peças (crânio, ossos, rifle) voando e quicando. */
+  robotDestroyed(e: Enemy) {
+    explosion(this, e.x, e.y - 14, 0.6);
+    this.cameras.main.shake(80, 0.004);
+    e.def.debris.forEach((frame, i) => {
+      const part = this.debris.create(e.x + Phaser.Math.Between(-4, 4), e.y - (i === 0 ? 22 : 8), 'bot_parts', frame) as ArcadeImage;
+      part
+        .setVelocity(-e.facing * Phaser.Math.Between(40, 120) + Phaser.Math.Between(-30, 30), Phaser.Math.Between(-280, -160))
+        .setAngularVelocity(Phaser.Math.Between(-500, 500))
+        .setDepth(9);
+      this.tweens.add({ targets: part, alpha: 0, delay: 1400, duration: 400, onComplete: () => part.destroy() });
+    });
+    this.glitchBars(e.x, e.y - 10, [0xff2a2a, 0xff8080]);
   }
 
   throwGrenade(x: number, y: number, facing: number, carryVx: number) {
@@ -440,7 +468,7 @@ export class GameScene extends Phaser.Scene {
 
   private cleanupProjectiles() {
     const v = this.cameras.main.worldView;
-    for (const group of [this.playerBullets, this.enemyBullets]) {
+    for (const group of [this.playerBullets, this.enemyBullets, this.debris]) {
       for (const o of [...group.getChildren()]) {
         const b = o as ArcadeImage;
         if (b.x < v.x - 40 || b.x > v.right + 40 || b.y < v.y - 40 || b.y > v.bottom + 40) b.destroy();
