@@ -9,9 +9,14 @@ export class MenuScene extends Phaser.Scene {
   create() {
     const cx = GAME_WIDTH / 2;
     this.add.image(0, 0, 'bg_sky').setOrigin(0);
-    this.add.tileSprite(0, 110, GAME_WIDTH, 120, 'bg_mountains').setOrigin(0);
-    this.add.tileSprite(0, 160, GAME_WIDTH, 110, 'bg_ruins').setOrigin(0);
-    this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.35).setOrigin(0);
+    const far = this.add.image(0, 0, 'bg_far').setOrigin(0);
+    const mid = this.add.image(0, 0, 'bg_mid').setOrigin(0);
+    const near = this.add.image(0, 0, 'bg_near').setOrigin(0);
+    // Cenário deslizando lentamente atrás do título
+    this.tweens.add({ targets: far, x: -200, duration: 60000, yoyo: true, repeat: -1 });
+    this.tweens.add({ targets: mid, x: -460, duration: 60000, yoyo: true, repeat: -1 });
+    this.tweens.add({ targets: near, x: -800, duration: 60000, yoyo: true, repeat: -1 });
+    this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.4).setOrigin(0);
 
     this.add
       .text(cx, 60, 'METAL RUSH', { fontFamily: FONT, fontSize: '28px', color: '#ffcf3a' })

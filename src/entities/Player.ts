@@ -22,6 +22,8 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   invulnerableUntil = 0;
 
   private lastShot = 0;
+  private wasOnGround = true;
+  private nextDust = 0;
   private gun: Phaser.GameObjects.Image;
 
   constructor(
@@ -53,7 +55,17 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     if (dir) this.facing = dir;
     this.setVelocityX(dir * SPEED);
 
-    if (onGround && c.justDown('jump')) this.setVelocityY(JUMP_VELOCITY);
+    const feet = this.body.bottom;
+    if (onGround && !this.wasOnGround) this.gs.dust(this.x, feet, 1);
+    if (onGround && dir && time > this.nextDust) {
+      this.gs.dust(this.x - this.facing * 6, feet, 0.6);
+      this.nextDust = time + 260;
+    }
+    if (onGround && c.justDown('jump')) {
+      this.setVelocityY(JUMP_VELOCITY);
+      this.gs.dust(this.x, feet, 0.8);
+    }
+    this.wasOnGround = onGround;
 
     this.aim = c.isDown('up') ? 'up' : c.isDown('down') && !onGround ? 'down' : 'forward';
     this.setFlipX(this.facing < 0);

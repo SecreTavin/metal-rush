@@ -36,10 +36,29 @@ src/
     Enemy.ts            IA dos inimigos
     enemyTypes.ts       catálogo de inimigos (stats e comportamento)
     weapons.ts          catálogo de armas
-  level/level1.ts       layout da fase: chão, coberturas, plataformas, inimigos, itens
-  gfx/                  pixel-art gerada por código (placeholders) e efeitos
+  level/level1.ts       layout da fase: chão, coberturas, plataformas, inimigos, itens, decoração
+  gfx/
+    textures.ts         personagens e armas (placeholders) + chama os geradores de arte
+    effects.ts          explosão, clarão do tiro, faíscas, poeira, textos
+    art/
+      kit.ts            pixel-art procedural: quantização em paleta com dithering
+      palettes.ts       paletas por camada (névoa ao fundo, cores quentes na frente)
+      primitives.ts     folhagem, cipós, blocos de pedra, colunas, troncos, cabeça esculpida
+      scenery.ts        camadas de parallax (céu, selva distante, plano médio, ruínas)
+      props.ts          chão, buracos, plataformas, coberturas, decoração, primeiro plano
+      fx.ts             sprites de efeitos e peças do HUD
+  ui/Hud.ts             HUD estilo arcade (pontos, barra, ARMS/BOMB, cronômetro, vidas)
   input/Controls.ts     mapeamento de teclas -> ações
 ```
+
+### Visual
+
+Toda a arte é **original e gerada por código** ao abrir o jogo (~200 ms): o cenário é desenhado com
+formas e gradientes e depois reduzido a uma paleta limitada com dithering, o que dá o aspecto de
+pixel-art de arcade. Para mudar a cena de uma fase, ajuste `decor`, `blocks`, `platforms` e
+`foreground` em `src/level/level1.ts`, ou a semente/paletas em `src/gfx/art/`.
+
+O cronômetro no topo desce 1 unidade a cada 1,5 s; ao zerar, o jogador perde uma vida (como no arcade).
 
 ### Adicionando um inimigo
 

@@ -6,16 +6,29 @@ import { Enemy } from '../entities/Enemy';
 import { ENEMIES } from '../entities/enemyTypes';
 import type { WeaponDef } from '../entities/weapons';
 import { LEVEL_1, LevelData } from '../level/level1';
-import { explosion, floatingText, muzzleFlash, slash } from '../gfx/effects';
+import { dustPuff, explosion, floatingText, impactSpark, muzzleFlash, slash } from '../gfx/effects';
+import { layerWidth, PARALLAX } from '../gfx/art/scenery';
+import { blockTexture, GROUND_H, ledgeTexture, pillarTexture } from '../gfx/art/props';
+import { Hud } from '../ui/Hud';
 
 type ArcadeImage = Phaser.Physics.Arcade.Image;
 type GameState = 'playing' | 'gameover' | 'clear';
 
 const START_LIVES = 3;
+const START_TIME = 60;
+/** Duração de 1 "segundo" do cronômetro (em ms), como nos arcades. */
+const TIMER_TICK = 1500;
 const GRENADE_FUSE = 1100;
 const GRENADE_RADIUS = 52;
 const GRENADE_DAMAGE = 4;
 const CAMERA_LEAD = 0.4;
+const FOREGROUND_PARALLAX = 1.25;
+
+/** Camadas de profundidade (quanto maior, mais na frente). */
+const DEPTH = {
+  sky: -10, far: -9, rays: -8, mid: -7, near: -6, pit: -5, decor: -4, pillar: -3, ground: -2, lip: -1,
+  pickup: 8, casing: 11, ambient: 30, foreground: 40,
+};
 
 /** Converte os argumentos genéricos dos callbacks de colisão do Phaser. */
 const as = <T>(o: unknown) => o as T;
@@ -26,6 +39,7 @@ export class GameScene extends Phaser.Scene {
   state: GameState = 'playing';
   score = 0;
   lives = START_LIVES;
+  timeLeft = START_TIME;
 
   private level: LevelData = LEVEL_1;
   private solids!: Phaser.Physics.Arcade.StaticGroup;
@@ -35,13 +49,9 @@ export class GameScene extends Phaser.Scene {
   private enemyBullets!: Phaser.Physics.Arcade.Group;
   private grenades!: Phaser.Physics.Arcade.Group;
   private pickups!: Phaser.Physics.Arcade.Group;
+  private casings!: Phaser.GameObjects.Particles.ParticleEmitter;
   private spawnIndex = 0;
-
-  private bgFar!: Phaser.GameObjects.TileSprite;
-  private bgNear!: Phaser.GameObjects.TileSprite;
-  private hudScore!: Phaser.GameObjects.Text;
-  private hudArms!: Phaser.GameObjects.Text;
-  private hudLives!: Phaser.GameObjects.Text;
+  private hud!: Hud;
   private enterKey!: Phaser.Input.Keyboard.Key;
 
   constructor() {
@@ -53,6 +63,7 @@ export class GameScene extends Phaser.Scene {
     this.state = 'playing';
     this.score = 0;
     this.lives = START_LIVES;
+    this.timeLeft = START_TIME;
     this.spawnIndex = 0;
     this.physics.resume();
 
@@ -62,13 +73,23 @@ export class GameScene extends Phaser.Scene {
     this.createBackground();
     this.createGroups();
     this.buildLevel();
+    this.createAmbient();
 
     this.player = new Player(this, 60, GROUND_Y - 18, this.controls);
     this.createColliders();
 
     this.cameras.main.setBounds(0, 0, this.level.width, GAME_HEIGHT);
-    this.createHud();
+    this.hud = new Hud(this, this.level.name);
     this.showBanner(this.level.name, 'COMEÇAR!', 2000);
+
+    this.time.addEvent({
+      delay: TIMER_TICK,
+      loop: true,
+      callback: () => {
+        if (this.state !== 'playing' || this.player.dead || this.timeLeft <= 0) return;
+        if (--this.timeLeft <= 0) this.killPlayer();
+      },
+    });
   }
 
   update(time: number) {
@@ -85,18 +106,37 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.cleanupProjectiles();
-    const scroll = this.cameras.main.scrollX;
-    this.bgFar.tilePositionX = scroll * 0.15;
-    this.bgNear.tilePositionX = scroll * 0.4;
-    this.updateHud();
+    this.hud.update();
   }
 
   // ---------- Montagem ----------
 
   private createBackground() {
-    this.add.image(0, 0, 'bg_sky').setOrigin(0).setScrollFactor(0);
-    this.bgFar = this.add.tileSprite(0, 100, GAME_WIDTH, 120, 'bg_mountains').setOrigin(0).setScrollFactor(0);
-    this.bgNear = this.add.tileSprite(0, 140, GAME_WIDTH, 110, 'bg_ruins').setOrigin(0).setScrollFactor(0);
+    this.add.image(0, 0, 'bg_sky').setOrigin(0).setScrollFactor(0).setDepth(DEPTH.sky);
+    this.add.image(0, 0, 'bg_far').setOrigin(0).setScrollFactor(PARALLAX.far).setDepth(DEPTH.far);
+
+    // Raios de luz atravessando a copa
+    const raysW = layerWidth(this.level.width, PARALLAX.rays);
+    for (let x = 120; x < raysW; x += Phaser.Math.Between(260, 420)) {
+      const ray = this.add
+        .image(x, 0, 'fx_ray')
+        .setOrigin(0)
+        .setScrollFactor(PARALLAX.rays)
+        .setDepth(DEPTH.rays)
+        .setBlendMode(Phaser.BlendModes.ADD)
+        .setAlpha(0.14);
+      this.tweens.add({
+        targets: ray,
+        alpha: 0.26,
+        duration: Phaser.Math.Between(1800, 3000),
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.easeInOut',
+      });
+    }
+
+    this.add.image(0, 0, 'bg_mid').setOrigin(0).setScrollFactor(PARALLAX.mid).setDepth(DEPTH.mid);
+    this.add.image(0, 0, 'bg_near').setOrigin(0).setScrollFactor(PARALLAX.near).setDepth(DEPTH.near);
   }
 
   private createGroups() {
@@ -109,27 +149,38 @@ export class GameScene extends Phaser.Scene {
     this.pickups = this.physics.add.group();
   }
 
-  private addStatic(group: Phaser.Physics.Arcade.StaticGroup, x: number, y: number, w: number, h: number, tex: string) {
-    const ts = this.add.tileSprite(x, y, w, h, tex).setOrigin(0);
-    this.physics.add.existing(ts, true);
-    group.add(ts);
-    return ts;
-  }
-
   private buildLevel() {
     const L = this.level;
 
-    // Fundo escuro nos buracos entre trechos de chão
-    this.add.rectangle(0, GROUND_Y + 4, L.width, GAME_HEIGHT - GROUND_Y, 0x2a1c12).setOrigin(0);
-    for (const g of L.ground) this.addStatic(this.solids, g.x, GROUND_Y, g.w, GAME_HEIGHT - GROUND_Y, 'tile_ground');
-    for (const b of L.blocks) this.addStatic(this.solids, b.x, GROUND_Y - b.h, b.w, b.h, 'tile_block');
+    // Fundo dos buracos
+    this.add.tileSprite(0, GROUND_Y + 2, L.width, GROUND_H, 'pit_fill').setOrigin(0).setDepth(DEPTH.pit);
+
+    for (const g of L.ground) {
+      const ground = this.add.tileSprite(g.x, GROUND_Y, g.w, GROUND_H, 'ground_fill').setOrigin(0).setDepth(DEPTH.ground);
+      this.physics.add.existing(ground, true);
+      this.solids.add(ground);
+      this.add.tileSprite(g.x, GROUND_Y - 8, g.w, 10, 'ground_lip').setOrigin(0).setDepth(DEPTH.lip);
+      // Bordas de barranco onde há buraco
+      if (g.x > 0) this.add.image(g.x, GROUND_Y - 6, 'ground_edge').setOrigin(0).setFlipX(true).setDepth(DEPTH.lip);
+      if (g.x + g.w < L.width) this.add.image(g.x + g.w - 14, GROUND_Y - 6, 'ground_edge').setOrigin(0).setDepth(DEPTH.lip);
+    }
+
+    for (const d of L.decor) {
+      this.add.image(d.x, GROUND_Y + 3, `decor_${d.kind}`).setOrigin(0.5, 1).setDepth(DEPTH.decor);
+    }
+
+    for (const b of L.blocks) {
+      const block = this.solids.create(b.x + b.w / 2, GROUND_Y - b.h / 2, blockTexture(this, b.kind, b.w, b.h));
+      block.setDepth(DEPTH.ground);
+    }
 
     for (const p of L.platforms) {
-      // Pilares decorativos
-      for (const px of [p.x + 6, p.x + p.w - 10]) {
-        this.add.rectangle(px, p.y + 8, 4, GROUND_Y - p.y - 8, 0x3d4148).setOrigin(0);
+      const pillarH = GROUND_Y - p.y - 8;
+      for (const px of [p.x + 4, p.x + p.w - 22]) {
+        this.add.image(px, p.y + 10, pillarTexture(this, pillarH)).setOrigin(0).setDepth(DEPTH.pillar);
       }
-      const plat = this.addStatic(this.platforms, p.x, p.y, p.w, 8, 'tile_platform');
+      const plat = this.platforms.create(p.x + p.w / 2, p.y + 7, ledgeTexture(this, p.w)) as Phaser.Physics.Arcade.Sprite;
+      plat.setDepth(DEPTH.ground);
       // Mão única: só colide por cima.
       const body = plat.body as Phaser.Physics.Arcade.StaticBody;
       body.checkCollision.down = false;
@@ -139,11 +190,61 @@ export class GameScene extends Phaser.Scene {
 
     for (const pk of L.pickups) {
       const crate = this.pickups.create(pk.x, pk.y ?? GROUND_Y - 30, pk.kind === 'heavy' ? 'crate_heavy' : 'crate_bomb');
-      crate.setData('kind', pk.kind);
+      crate.setData('kind', pk.kind).setDepth(DEPTH.pickup);
     }
 
-    this.add.rectangle(L.goalX, GROUND_Y - 70, 3, 70, 0x333333).setOrigin(0);
-    this.add.image(L.goalX + 2, GROUND_Y - 70, 'flag').setOrigin(0);
+    this.add.rectangle(L.goalX, GROUND_Y - 70, 3, 70, 0x333333).setOrigin(0).setDepth(DEPTH.decor);
+    this.add.image(L.goalX + 2, GROUND_Y - 70, 'flag').setOrigin(0).setDepth(DEPTH.decor);
+
+    for (const f of L.foreground) {
+      const img =
+        f.kind === 'fern'
+          ? this.add.image(f.x, GAME_HEIGHT + 8, 'fg_fern').setOrigin(0.5, 1)
+          : this.add.image(f.x, -4, 'fg_vines').setOrigin(0.5, 0);
+      img.setScrollFactor(FOREGROUND_PARALLAX).setDepth(DEPTH.foreground);
+    }
+  }
+
+  private createAmbient() {
+    // Folhas caindo
+    this.add
+      .particles(0, 0, 'leaf', {
+        x: { min: 0, max: GAME_WIDTH + 60 },
+        y: -8,
+        lifespan: 9000,
+        speedY: { min: 16, max: 34 },
+        speedX: { min: -26, max: 4 },
+        rotate: { start: 0, end: 540 },
+        frequency: 650,
+      })
+      .setScrollFactor(0)
+      .setDepth(DEPTH.ambient);
+
+    // Poeira brilhando na luz
+    this.add
+      .particles(0, 0, 'mote', {
+        x: { min: 0, max: GAME_WIDTH },
+        y: { min: 30, max: 200 },
+        lifespan: 4000,
+        speedX: { min: -6, max: 6 },
+        speedY: { min: -6, max: 3 },
+        alpha: { start: 0.6, end: 0 },
+        frequency: 380,
+        blendMode: Phaser.BlendModes.ADD,
+      })
+      .setScrollFactor(0)
+      .setDepth(DEPTH.ambient);
+
+    this.casings = this.add
+      .particles(0, 0, 'casing', {
+        lifespan: 650,
+        speed: { min: 50, max: 110 },
+        angle: { min: 235, max: 305 },
+        gravityY: 700,
+        rotate: { start: 0, end: 720 },
+        emitting: false,
+      })
+      .setDepth(DEPTH.casing);
   }
 
   private createColliders() {
@@ -154,14 +255,21 @@ export class GameScene extends Phaser.Scene {
     p.collider(this.pickups, [this.solids, this.platforms]);
     p.collider(this.grenades, [this.solids, this.platforms]);
 
-    p.overlap(this.playerBullets, this.solids, (b) => as<ArcadeImage>(b).destroy());
-    p.overlap(this.enemyBullets, this.solids, (b) => as<ArcadeImage>(b).destroy());
+    const hitWall = (b: unknown) => {
+      const bullet = as<ArcadeImage>(b);
+      impactSpark(this, bullet.x, bullet.y);
+      bullet.destroy();
+    };
+    p.overlap(this.playerBullets, this.solids, hitWall);
+    p.overlap(this.enemyBullets, this.solids, hitWall);
 
     p.overlap(this.playerBullets, this.enemies, (b, e) => {
       const enemy = as<Enemy>(e);
       if (enemy.dying) return;
-      enemy.hit(as<ArcadeImage>(b).getData('damage'));
-      as<ArcadeImage>(b).destroy();
+      const bullet = as<ArcadeImage>(b);
+      enemy.hit(bullet.getData('damage'));
+      impactSpark(this, bullet.x, bullet.y);
+      bullet.destroy();
     });
 
     p.overlap(this.player, this.enemyBullets, (_pl, b) => {
@@ -217,13 +325,14 @@ export class GameScene extends Phaser.Scene {
     const b = this.playerBullets.create(x, y, weapon.bullet) as ArcadeImage;
     b.setRotation(angle).setData('damage', weapon.damage).setDepth(8);
     b.setVelocity(Math.cos(angle) * weapon.speed, Math.sin(angle) * weapon.speed);
-    muzzleFlash(this, x, y);
+    muzzleFlash(this, x, y, angle);
+    this.casings.emitParticleAt(this.player.x, this.player.y - 2, 1);
   }
 
   spawnEnemyBullet(x: number, y: number, angle: number, speed: number) {
     const b = this.enemyBullets.create(x, y, 'bullet_enemy') as ArcadeImage;
     b.setDepth(8).setVelocity(Math.cos(angle) * speed, Math.sin(angle) * speed);
-    muzzleFlash(this, x, y);
+    muzzleFlash(this, x, y, angle);
   }
 
   throwGrenade(x: number, y: number, facing: number, carryVx: number) {
@@ -240,8 +349,8 @@ export class GameScene extends Phaser.Scene {
     if (!g.active) return;
     const { x, y } = g;
     g.destroy();
-    explosion(this, x, y - 6, 1);
-    this.cameras.main.shake(120, 0.008);
+    explosion(this, x, y, 1);
+    this.cameras.main.shake(140, 0.01);
     for (const o of [...this.enemies.getChildren()]) {
       const e = o as Enemy;
       if (!e.dying && Phaser.Math.Distance.Between(x, y, e.x, e.y) < GRENADE_RADIUS) e.hit(GRENADE_DAMAGE);
@@ -257,6 +366,10 @@ export class GameScene extends Phaser.Scene {
 
   meleeSlash(x: number, y: number, facing: number) {
     slash(this, x, y, facing);
+  }
+
+  dust(x: number, y: number, scale = 1) {
+    dustPuff(this, x, y, scale);
   }
 
   addScore(points: number, x: number, y: number) {
@@ -300,6 +413,7 @@ export class GameScene extends Phaser.Scene {
         this.gameOver();
         return;
       }
+      this.timeLeft = START_TIME;
       this.player.respawn(this.safeGroundX(this.cameras.main.scrollX + 70), 40, this.time.now);
     });
   }
@@ -326,24 +440,6 @@ export class GameScene extends Phaser.Scene {
     this.showBanner('MISSÃO CUMPRIDA!', 'ENTER PARA JOGAR DE NOVO');
   }
 
-  // ---------- HUD ----------
-
-  private createHud() {
-    const style = { fontFamily: FONT, fontSize: '8px', color: '#ffffff' };
-    const mk = (x: number, y: number) =>
-      this.add.text(x, y, '', style).setScrollFactor(0).setDepth(100).setStroke('#000000', 3);
-    this.hudScore = mk(8, 8);
-    this.hudArms = mk(8, 20);
-    this.hudLives = mk(GAME_WIDTH - 8, 8).setOrigin(1, 0);
-  }
-
-  private updateHud() {
-    const p = this.player;
-    this.hudScore.setText(`1UP ${String(this.score).padStart(7, '0')}`);
-    this.hudArms.setText(`ARMS ${p.ammo === Infinity ? 'INF' : p.ammo}  BOMB ${p.bombs}`);
-    this.hudLives.setText(`VIDAS x${this.lives}`);
-  }
-
   private showBanner(title: string, subtitle: string, hideAfter?: number) {
     const cx = GAME_WIDTH / 2;
     const cy = GAME_HEIGHT / 2 - 20;
@@ -351,6 +447,7 @@ export class GameScene extends Phaser.Scene {
       .text(cx, cy, title, { fontFamily: FONT, fontSize: '18px', color: '#ffcf3a' })
       .setOrigin(0.5)
       .setStroke('#6b1a10', 5)
+      .setShadow(2, 2, '#000000', 0, true, true)
       .setScrollFactor(0)
       .setDepth(200);
     const t2 = this.add
@@ -360,10 +457,16 @@ export class GameScene extends Phaser.Scene {
       .setScrollFactor(0)
       .setDepth(200);
     if (hideAfter) {
-      this.tweens.add({ targets: [t1, t2], alpha: 0, delay: hideAfter, duration: 400, onComplete: () => {
-        t1.destroy();
-        t2.destroy();
-      } });
+      this.tweens.add({
+        targets: [t1, t2],
+        alpha: 0,
+        delay: hideAfter,
+        duration: 400,
+        onComplete: () => {
+          t1.destroy();
+          t2.destroy();
+        },
+      });
     }
   }
 }
