@@ -1,5 +1,6 @@
 import { loadSave, upgradeLevel, writeSave } from './save';
 import { skillStats, SkillLevels, SkillStats } from './skills';
+import { Loadout, startingLoadout } from './gear';
 
 const BASE_HP = 5;
 const BASE_BOMBS = 8;
@@ -12,6 +13,8 @@ export class RunState {
   maxHp: number;
   bombs: number;
   skills: SkillLevels = {};
+  /** Armas, skills ativas e granada equipadas. */
+  loadout: Loadout = startingLoadout();
   fragments = 0;
   score = 0;
   kills = 0;

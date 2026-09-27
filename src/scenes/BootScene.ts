@@ -18,6 +18,14 @@ export class BootScene extends Phaser.Scene {
     this.load.spritesheet('bot_soldier', 'sprites/bot_soldier.png', { frameWidth: 40, frameHeight: 56 });
     this.load.spritesheet('bot_hunter', 'sprites/bot_hunter.png', { frameWidth: 40, frameHeight: 56 });
     this.load.spritesheet('bot_parts', 'sprites/bot_parts.png', { frameWidth: 16, frameHeight: 16 });
+    // Armas e itens (tools/weapons/build_weapons.py)
+    this.load.spritesheet('gear_icons', 'sprites/gear_icons.png', { frameWidth: 26, frameHeight: 22 });
+    this.load.spritesheet('gear_shield', 'sprites/gear_shield.png', { frameWidth: 28, frameHeight: 30 });
+    this.load.spritesheet('gear_throw_arm', 'sprites/gear_throw_arm.png', { frameWidth: 18, frameHeight: 11 });
+    this.load.spritesheet('gear_dog', 'sprites/gear_dog.png', { frameWidth: 26, frameHeight: 20 });
+    for (const key of ['gear_whip_arm', 'gear_vga_plug', 'gear_raspberry', 'gear_helmet', 'gear_chest', 'gear_armband']) {
+      this.load.image(key, `sprites/${key}.png`);
+    }
   }
 
   create() {

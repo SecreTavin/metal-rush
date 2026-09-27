@@ -19,11 +19,12 @@ Abra http://localhost:5173. Use `?debug` na URL para ver as caixas de colisão.
 |---|---|
 | Mover | Setas / WASD |
 | Mirar | Cima (e Baixo no ar) |
-| Arma principal (MacBook: tiro; golpe se o robô estiver colado) | Clique esquerdo / J / Z |
-| Arma secundária (por enquanto: golpe com o MacBook) | Clique direito / U / V |
+| Arma 1 (começa com o MacBook: tiro; golpe se o robô estiver colado) | Clique esquerdo / J / Z |
+| Arma 2 (vazia: golpe com o MacBook) | Clique direito / U / V |
 | Pular | K / X / Espaço |
-| Pendrive EMP (granada) | L / C |
-| Usar terminal de upgrade | Cima |
+| Granada (Pendrive EMP ou Raspberry) | L / C |
+| Skill ativa 1 / 2 | Q / E |
+| Usar terminal de upgrade / pegar item | Cima |
 | Esquiva (skill Rollback) | Shift / I |
 
 ## Como funciona (Metal Slug + Dead Cells)
@@ -60,6 +61,22 @@ Morreu, a run acaba e você volta ao **Laboratório** — mas os fragmentos cole
 | PENDRIVE CLUSTER* | EMP solta 3 mini-EMPs |
 
 \* liberadas no Laboratório.
+
+### Armas e itens
+
+Cada missão tem caches de equipamento (um no começo, outro antes da sala de upgrade, e o chefe solta um raro ou melhor).
+Chegue perto e aperte **Cima** para escolher onde equipar; o item trocado cai no chão.
+O herói leva **2 armas** (clique esquerdo / direito), **até 2 skills ativas** (Q / E) e **1 granada** (L).
+
+| Item | Tipo | Raridade | Efeito |
+|---|---|---|---|
+| ESCUDO 144HZ | Arma (segurar) | Comum | Defende tiros e golpes pela frente; tiros ricocheteiam no inimigo mais próximo. 5 golpes = recarga de 8s |
+| MASSAGEM DEV | Arma | Raro | Chicote de cabo VGA de alcance médio; acerto com a ponta é "perfeito" (mais dano) |
+| ARDUINO E VOLTANDO | Granada | Raro | Raspberry bumerangue infinito (0,2s entre arremessos, até 3 no ar); ricocheteia no mapa. Substitui o pendrive na run |
+| TA NA HORA DE MORFAR | Skill | Épico | Armadura de brinquedo: imortal por 10s; recarga de 30s |
+| SENIOR VIBE CODING | Skill | Lendário | Cão holográfico imortal ataca os robôs por 25s; recarga de 60s |
+
+Os sprites são gerados por `tools/weapons/build_weapons.py` (a prancha `tools/weapons/preview.png` mostra todos).
 
 ### Chefes
 

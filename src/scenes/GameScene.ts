@@ -16,6 +16,9 @@ import { SkillChoice } from '../ui/SkillChoice';
 import { RunState } from '../run/RunState';
 import { loadSave, upgradeLevel } from '../run/save';
 import { rollSkills, SkillDef } from '../run/skills';
+import { GEAR, GEAR_RARITY_COLOR, GearId, rollGear } from '../run/gear';
+import { GearOffer } from '../ui/GearOffer';
+import { mulberry32 } from '../gfx/art/kit';
 import type { Boss } from '../bosses/Boss';
 import { Sentinel } from '../bosses/Sentinel';
 import { Forger } from '../bosses/Forger';
@@ -38,6 +41,18 @@ const PIT_DAMAGE = 2;
 const ENEMY_HP_PER_MISSION = 0.4;
 /** Vida base dos chefes (cresce um pouco com o número de skills da run). */
 const BOSS_HP = { sentinel: 160, forger: 100, eye: 180 } as const;
+/** Raspberry bumerangue. */
+const PI_SPEED = 380;
+const PI_BRAKE = 520;
+const PI_DAMAGE = 2;
+const PI_MAX_FLYING = 3;
+const PI_LIFETIME = 3500;
+/** Tiro devolvido pelo Escudo 144Hz. */
+const REFLECT_WEAPON: WeaponDef = {
+  label: 'REFLEXO', laptopFrame: 0, bullet: 'bolt_oc', impact: 'bolt_hit', fireRate: 0, speed: 380, damage: 3, spread: 0, ammo: Infinity, bitsTint: 0xff8cf5,
+};
+
+type GearCache = { id: GearId; x: number; icon: Phaser.GameObjects.Image; glow: Phaser.GameObjects.Image; prompt: Phaser.GameObjects.Text };
 
 /** Converte os argumentos genéricos dos callbacks de colisão do Phaser. */
 const as = <T>(o: unknown) => o as T;
@@ -67,6 +82,9 @@ export class GameScene extends Phaser.Scene {
   loot!: Phaser.Physics.Arcade.Group;
   /** Zonas de acerto do chefe atual. */
   bossHurt!: Phaser.Physics.Arcade.Group;
+  /** Raspberries em voo (bumerangue). */
+  boomerangs!: Phaser.Physics.Arcade.Group;
+  private gearCaches: GearCache[] = [];
   boss: Boss | null = null;
   private bossStarted = false;
   private bits!: Phaser.GameObjects.Particles.ParticleEmitter;
@@ -94,6 +112,7 @@ export class GameScene extends Phaser.Scene {
     this.cameraLock = null;
     this.lastSafeX = 60;
     this.terminals = [];
+    this.gearCaches = [];
     this.boss = null;
     this.bossStarted = false;
     this.physics.resume();
@@ -116,6 +135,7 @@ export class GameScene extends Phaser.Scene {
     this.cameras.main.setBounds(0, 0, this.level.width, GAME_HEIGHT);
     this.cameras.main.fadeIn(400);
     this.hud = new Hud(this, this.level.name);
+    this.placeGearCaches();
     this.showBanner(this.level.name, this.level.subtitle, 2200);
 
     // Melhoria "Boot com Skill": primeira escolha logo no início da run
@@ -129,7 +149,10 @@ export class GameScene extends Phaser.Scene {
     this.controls.update();
     if (this.state === 'playing') {
       this.run.timeMs += delta;
-      this.player.update(time);
+      this.player.update(time, delta);
+      this.reflectBullets();
+      this.updateBoomerangs(time, delta);
+      this.updateGearCaches();
       this.updateCamera();
       this.spawnEnemies();
       this.world.update(time, delta);
@@ -162,6 +185,7 @@ export class GameScene extends Phaser.Scene {
     this.debris = this.physics.add.group({ bounceY: 0.35, dragX: 70 });
     this.loot = this.physics.add.group({ bounceY: 0.4, dragX: 120 });
     this.bossHurt = this.physics.add.group({ allowGravity: false, immovable: true });
+    this.boomerangs = this.physics.add.group({ allowGravity: false });
   }
 
   private buildLevel() {
@@ -289,10 +313,37 @@ export class GameScene extends Phaser.Scene {
     p.overlap(this.playerBullets, this.enemies, (b, e) => this.bulletHitsEnemy(as<ArcadeImage>(b), as<Enemy>(e)));
 
     p.overlap(this.player, this.enemyBullets, (_pl, b) => {
-      if (!this.player.isVulnerable(this.time.now)) return;
       const bullet = as<ArcadeImage>(b);
+      if (this.tryReflect(bullet)) return;
+      if (!this.player.isVulnerable(this.time.now)) return;
       this.hurtPlayer(1, bullet.x);
       bullet.destroy();
+    });
+
+    // Raspberry: ricocheteia no mapa na ida; na volta atravessa tudo até a mão do herói
+    p.collider(
+      this.boomerangs,
+      this.solids,
+      (b) => this.boomerangBounce(as<ArcadeImage>(b)),
+      (b) => as<ArcadeImage>(b).getData('phase') === 'out',
+    );
+    p.overlap(this.boomerangs, this.enemies, (b, e) => {
+      const pi = as<ArcadeImage>(b);
+      const enemy = as<Enemy>(e);
+      const hits = pi.getData('hits') as Set<unknown>;
+      if (enemy.dying || hits.has(enemy)) return;
+      hits.add(enemy);
+      enemy.hit(PI_DAMAGE);
+      impactSpark(this, pi.x, pi.y, 'bolt_hit');
+    });
+    p.overlap(this.boomerangs, this.bossHurt, (b, z) => {
+      const pi = as<ArcadeImage>(b);
+      const boss = as<Phaser.GameObjects.Zone>(z).getData('boss') as Boss;
+      const hits = pi.getData('hits') as Set<unknown>;
+      if (boss.dying || hits.has(boss)) return;
+      hits.add(boss);
+      const zone = boss.zoneAt(pi.x, pi.y) ?? as<Phaser.GameObjects.Zone>(z);
+      if (boss.hit(PI_DAMAGE, pi.x, pi.y, zone)) impactSpark(this, pi.x, pi.y, 'bolt_hit');
     });
 
     p.overlap(this.grenades, this.enemies, (g, e) => {
@@ -377,7 +428,7 @@ export class GameScene extends Phaser.Scene {
 
   private fallIntoPit() {
     const run = this.run;
-    run.hp = Math.max(0, run.hp - PIT_DAMAGE);
+    if (!this.player.arsenal.immortal(this.time.now)) run.hp = Math.max(0, run.hp - PIT_DAMAGE);
     this.cameras.main.shake(150, 0.006);
     this.glitchBurst(this.player.x, GAME_HEIGHT - 20);
     if (run.hp <= 0) {
@@ -706,6 +757,199 @@ export class GameScene extends Phaser.Scene {
     return true;
   }
 
+  // ---------- Escudo 144Hz: tiros voltam nos inimigos ----------
+
+  /** Tiros inimigos que entram na área do escudo erguido são devolvidos. */
+  private reflectBullets() {
+    const zone = this.player.arsenal.shieldZone();
+    if (!zone) return;
+    for (const o of [...this.enemyBullets.getChildren()]) {
+      const b = o as ArcadeImage;
+      if (zone.contains(b.x, b.y)) this.tryReflect(b);
+    }
+  }
+
+  /** Devolve o tiro se o escudo estiver erguido e o tiro vier da frente. */
+  private tryReflect(bullet: ArcadeImage) {
+    const p = this.player;
+    if (!bullet.active || !p.arsenal.blocking) return false;
+    if ((bullet.x - p.x) * p.facing < -4) return false;
+    const { x, y } = bullet;
+    bullet.destroy();
+    p.arsenal.registerBlock(this.time.now);
+    // ricochete na direção do inimigo mais próximo à frente (ou de volta em linha reta)
+    let target: { x: number; y: number } | null = null;
+    let best = 320;
+    for (const o of this.enemies.getChildren()) {
+      const e = o as Enemy;
+      const d = Phaser.Math.Distance.Between(x, y, e.x, e.y - 8);
+      if (!e.dying && (e.x - p.x) * p.facing > 0 && d < best) {
+        best = d;
+        target = { x: e.x, y: e.y - 8 };
+      }
+    }
+    if (!target && this.boss && !this.boss.dying) {
+      const z = this.boss.zoneNear(x, y, 400);
+      if (z) target = z.getCenter() as { x: number; y: number };
+    }
+    const angle = target ? Math.atan2(target.y - y, target.x - x) : p.facing > 0 ? 0 : Math.PI;
+    this.spawnPlayerBullet(x + p.facing * 4, y, angle, REFLECT_WEAPON, false);
+    impactSpark(this, x, y, 'bolt_hit');
+    return true;
+  }
+
+  // ---------- Arduino e Voltando (Raspberry bumerangue) ----------
+
+  throwRaspberry(x: number, y: number, facing: number) {
+    if (this.boomerangs.countActive() >= PI_MAX_FLYING) return;
+    const pi = this.boomerangs.create(x, y, 'gear_raspberry') as ArcadeImage;
+    pi.setDepth(12).setVelocity(facing * PI_SPEED, 0).setAngularVelocity(facing * 900).setBounce(1);
+    pi.body!.setSize(14, 10);
+    pi.setData({ phase: 'out', facing, hits: new Set(), born: this.time.now });
+  }
+
+  private boomerangBounce(pi: ArcadeImage) {
+    if (pi.getData('phase') !== 'out') return;
+    pi.setData('phase', 'back');
+    (pi.getData('hits') as Set<unknown>).clear();
+    impactSpark(this, pi.x, pi.y, 'spark');
+  }
+
+  private updateBoomerangs(time: number, delta: number) {
+    const dt = delta / 1000;
+    const p = this.player;
+    for (const o of [...this.boomerangs.getChildren()]) {
+      const pi = o as ArcadeImage;
+      const body = pi.body as Phaser.Physics.Arcade.Body;
+      if (time - (pi.getData('born') as number) > PI_LIFETIME || p.dead) {
+        impactSpark(this, pi.x, pi.y);
+        pi.destroy();
+        continue;
+      }
+      if (pi.getData('phase') === 'out') {
+        const f = pi.getData('facing') as number;
+        body.velocity.x -= f * PI_BRAKE * dt;
+        if (body.velocity.x * f <= 0) {
+          pi.setData('phase', 'back');
+          (pi.getData('hits') as Set<unknown>).clear();
+        }
+        continue;
+      }
+      // volta: persegue a mão do herói
+      const tx = p.x;
+      const ty = p.y - 4;
+      const d = Phaser.Math.Distance.Between(pi.x, pi.y, tx, ty);
+      if (d < 14) {
+        pi.destroy();
+        continue;
+      }
+      const speed = Math.min(PI_SPEED + 80, Math.hypot(body.velocity.x, body.velocity.y) + 900 * dt);
+      body.setVelocity(((tx - pi.x) / d) * speed, ((ty - pi.y) / d) * speed);
+    }
+  }
+
+  // ---------- Caches de equipamento ----------
+
+  /** Dois caches por missão: um no começo e outro antes da sala de upgrade. */
+  private placeGearCaches() {
+    const rng = mulberry32(this.run.seed + this.run.mission * 7919);
+    const spots = [260];
+    const shrine = this.level.terminals?.[0];
+    if (shrine) spots.push(shrine.x - 110);
+    for (const x of spots) {
+      const id = rollGear(this.run.loadout, rng, 'common', this.gearCaches.map((c) => c.id));
+      if (id) this.addGearCache(x, id);
+    }
+  }
+
+  /** x em chão firme, longe de blocos e buracos. */
+  private clearGroundX(x: number) {
+    const L = this.level;
+    for (let dx = 0; dx < 400; dx += 16) {
+      for (const cx of [x + dx, x - dx]) {
+        const onGround = L.ground.some((g) => cx >= g.x + 24 && cx <= g.x + g.w - 24);
+        const blocked = L.blocks.some((b) => cx > b.x - 18 && cx < b.x + b.w + 18);
+        if (onGround && !blocked) return cx;
+      }
+    }
+    return x;
+  }
+
+  addGearCache(x: number, id: GearId) {
+    x = this.clearGroundX(x);
+    const def = GEAR[id];
+    const color = Phaser.Display.Color.HexStringToColor(GEAR_RARITY_COLOR[def.rarity]).color;
+    const y = GROUND_Y - 20;
+    const glow = this.add.image(x, y, 'eye_glow').setScale(3.4).setTint(color).setBlendMode(Phaser.BlendModes.ADD).setDepth(DEPTH.interactive);
+    this.tweens.add({ targets: glow, alpha: { from: 0.35, to: 0.9 }, duration: 650, yoyo: true, repeat: -1 });
+    const icon = this.add.image(x, y, def.icon.key, def.icon.frame).setDepth(DEPTH.pickup);
+    this.tweens.add({ targets: icon, y: y - 4, duration: 800, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+    const prompt = this.add
+      .text(x, y - 26, `CIMA: ${def.name}`, { fontFamily: FONT, fontSize: '8px', color: GEAR_RARITY_COLOR[def.rarity] })
+      .setOrigin(0.5)
+      .setStroke('#000000', 3)
+      .setDepth(DEPTH.foreground)
+      .setVisible(false);
+    this.gearCaches.push({ id, x, icon, glow, prompt });
+  }
+
+  private removeGearCache(c: GearCache) {
+    c.icon.destroy();
+    c.glow.destroy();
+    c.prompt.destroy();
+    this.gearCaches = this.gearCaches.filter((o) => o !== c);
+  }
+
+  private updateGearCaches() {
+    const p = this.player;
+    if (p.dead) return;
+    for (const c of this.gearCaches) {
+      const near = Math.abs(p.x - c.x) < 20 && p.body.bottom > GROUND_Y - 44;
+      c.prompt.setVisible(near);
+      if (near && this.controls.justDown('up')) {
+        this.openGearOffer(c);
+        return;
+      }
+    }
+  }
+
+  /** Pausa e mostra o item com as opções de onde equipar. */
+  private openGearOffer(cache: GearCache) {
+    if (this.state !== 'playing') return;
+    this.state = 'choosing';
+    this.physics.pause();
+    this.player.anims.pause();
+    new GearOffer(this, cache.id, this.run.loadout, (slot) => {
+      this.physics.resume();
+      this.player.anims.resume();
+      this.state = 'playing';
+      if (slot !== null) this.equipGear(cache, slot);
+    });
+  }
+
+  /** Equipa o item no slot escolhido; o que sai cai no chão (o pendrive é descartado). */
+  private equipGear(cache: GearCache, slot: number) {
+    const def = GEAR[cache.id];
+    const l = this.run.loadout;
+    let old: GearId | null = null;
+    if (def.kind === 'weapon') {
+      old = l.weapons[slot];
+      l.weapons[slot] = cache.id as (typeof l.weapons)[number];
+    } else if (def.kind === 'skill') {
+      old = l.abilities[slot];
+      l.abilities[slot] = cache.id as (typeof l.abilities)[number];
+      this.player.arsenal.resetAbility(slot);
+    } else {
+      old = l.grenade === 'pendrive' ? null : l.grenade;
+      l.grenade = cache.id as typeof l.grenade;
+    }
+    const x = cache.x;
+    this.removeGearCache(cache);
+    floatingText(this, this.player.x, this.player.y - 40, def.name, GEAR_RARITY_COLOR[def.rarity]);
+    this.glitchBars(this.player.x, this.player.y, [0x8ff0ff, 0xffffff]);
+    if (old) this.addGearCache(x, old);
+  }
+
   // ---------- Chefes ----------
 
   private updateBoss(time: number, delta: number) {
@@ -743,6 +987,8 @@ export class GameScene extends Phaser.Scene {
     }
     this.showBanner(`${boss.name}`, 'DESTRUIDO!', 2200, '#7aff9a');
     this.addTerminal(this.level.boss!.x + 240);
+    const drop = rollGear(this.run.loadout, Math.random, 'rare', this.gearCaches.map((c) => c.id));
+    if (drop) this.addGearCache(this.level.boss!.x + 170, drop);
   }
 
   enemyInMeleeRange(x: number, y: number, facing: number, range = 30): Enemy | undefined {

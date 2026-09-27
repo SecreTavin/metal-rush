@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import type { GameScene } from '../scenes/GameScene';
-import type { Controls } from '../input/Controls';
+import type { Action, Controls } from '../input/Controls';
+import { Arsenal } from './Arsenal';
 import { WEAPONS, WeaponDef, WeaponKey } from './weapons';
 import { HERO_BOB } from '../gfx/art/heroFx';
 
@@ -55,6 +56,8 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private ring: Phaser.GameObjects.Sprite;
   private scan: Phaser.GameObjects.Image;
   private shield: Phaser.GameObjects.Image;
+  /** Escudo, chicote, bumerangue, skills ativas e seus visuais. */
+  arsenal: Arsenal;
 
   constructor(
     private gs: GameScene,
@@ -77,16 +80,18 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.shield = gs.add.image(x, y, 'shield_bubble').setDepth(11).setBlendMode(Phaser.BlendModes.ADD).setVisible(false);
 
     this.laptop = gs.add.image(x, y, 'hero_laptop', 0).setOrigin(1 / 28, 8.5 / 16).setDepth(11);
+    this.arsenal = new Arsenal(gs, this);
   }
 
   private get stats() {
     return this.gs.run.stats;
   }
 
-  update(time: number) {
+  update(time: number, delta: number) {
     this.followEffects(time);
     if (this.dead) {
       this.setVelocityX(this.body.velocity.x * 0.95);
+      this.updateLaptop(time);
       return;
     }
 
@@ -116,7 +121,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       }
     } else {
       if (!this.body.allowGravity) this.body.setAllowGravity(true);
-      this.setVelocityX(dir * SPEED);
+      this.setVelocityX(dir * SPEED * this.arsenal.speedMul);
     }
 
     const feet = this.body.bottom;
@@ -153,19 +158,21 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       this.nextTrail = time + 70;
     }
 
-    // Arma principal (clique esquerdo / J / Z)
-    const tapped = c.justDown('primary');
-    const since = time - this.lastShot;
-    const rate = this.weapon.fireRate * this.stats.fireRateMul;
-    if ((tapped && since > TAP_FIRE_DELAY * this.stats.fireRateMul) || (c.isDown('primary') && since > rate)) {
-      this.attack(time);
+    // Armas: slot 1 = clique esquerdo / J / Z, slot 2 = clique direito / U / V.
+    // Escudo, chicote, Raspberry e skills (Q / E) ficam no Arsenal.
+    this.arsenal.update(time, delta, c);
+    const weapons = this.gs.run.loadout.weapons;
+    const slots: Action[] = ['primary', 'secondary'];
+    if (!this.arsenal.blocking) {
+      weapons.forEach((w, i) => w === 'macbook' && this.fireMacbook(slots[i], time));
+      // slot 2 vazio: golpe com o MacBook
+      if (weapons[1] === null && weapons[0] === 'macbook') {
+        const secondary = c.justDown('secondary');
+        if ((secondary || c.isDown('secondary')) && time > this.nextSecondary) this.bash(time);
+      }
     }
 
-    // Arma secundária (clique direito / U / V)
-    const secondary = c.justDown('secondary');
-    if ((secondary || c.isDown('secondary')) && time > this.nextSecondary) this.bash(time);
-
-    if (c.justDown('grenade') && this.gs.run.bombs > 0) {
+    if (this.gs.run.loadout.grenade === 'pendrive' && c.justDown('grenade') && this.gs.run.bombs > 0) {
       this.gs.run.bombs--;
       this.gs.throwGrenade(this.x + this.facing * 8, this.y - 10, this.facing, this.body.velocity.x);
     }
@@ -178,13 +185,23 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
   // ---------- MacBook ----------
 
+  private fireMacbook(action: Action, time: number) {
+    const c = this.controls;
+    const tapped = c.justDown(action);
+    const since = time - this.lastShot;
+    const rate = this.weapon.fireRate * this.stats.fireRateMul;
+    if ((tapped && since > TAP_FIRE_DELAY * this.stats.fireRateMul) || (c.isDown(action) && since > rate)) {
+      this.attack(time);
+    }
+  }
+
   private aimVector() {
     if (this.aim === 'up') return { x: 0, y: -1 };
     if (this.aim === 'down') return { x: 0, y: 1 };
     return { x: this.facing, y: 0 };
   }
 
-  private pivot() {
+  pivot() {
     const frame = Number(this.frame.name) || 0;
     const bob = HERO_BOB[frame] ?? 0;
     const upShift = this.aim === 'up' ? { x: 4, y: -3 } : { x: 0, y: 0 };
@@ -217,7 +234,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       .setPosition(p.x - Math.cos(angle) * recoil, p.y - Math.sin(angle) * recoil)
       .setRotation(angle)
       .setFlipY(this.facing < 0)
-      .setVisible(!this.dead);
+      .setVisible(this.arsenal.draw(time));
   }
 
   private attack(time: number) {
@@ -311,6 +328,18 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
    */
   hurt(amount: number, time: number, fromX?: number) {
     if (!this.isVulnerable(time)) return false;
+    // Tá na hora de Morfar: imortal
+    if (this.arsenal.immortal(time)) {
+      this.invulnerableUntil = time + 300;
+      this.gs.glitchBars(this.x, this.y, [0xff3b3b, 0xffd83a, 0x3a8cff]);
+      return false;
+    }
+    // Escudo 144Hz erguido e o golpe veio da frente
+    if (this.arsenal.tryBlock(fromX, time)) {
+      this.invulnerableUntil = time + 250;
+      this.setVelocityX(-this.facing * 90);
+      return false;
+    }
     const s = this.stats;
     if (s.shieldCooldown !== null && time >= this.shieldReadyAt) {
       this.shieldReadyAt = time + s.shieldCooldown;
@@ -356,6 +385,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.ring?.destroy();
     this.scan?.destroy();
     this.shield?.destroy();
+    this.arsenal?.destroy();
     super.destroy(fromScene);
   }
 }

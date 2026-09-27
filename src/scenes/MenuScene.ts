@@ -49,11 +49,12 @@ export class MenuScene extends Phaser.Scene {
       'ARMA 1 ..... CLIQUE ESQ / J / Z',
       'ARMA 2 ..... CLIQUE DIR / U / V',
       'PULAR ........ K / X / ESPAÇO',
-      'PENDRIVE EMP ......... L / C',
-      'UPGRADE (TERMINAL) ..... CIMA',
+      'GRANADA .............. L / C',
+      'SKILLS ................ Q / E',
+      'TERMINAL / ITEM ........ CIMA',
     ];
     this.add
-      .text(cx, 218, controls.join('\n'), {
+      .text(cx, 214, controls.join('\n'), {
         fontFamily: FONT,
         fontSize: '8px',
         color: '#e8e8e8',

@@ -2,8 +2,19 @@ import Phaser from 'phaser';
 import { FONT, GAME_HEIGHT, GAME_WIDTH } from '../config';
 import type { GameScene } from '../scenes/GameScene';
 import { RARITY_COLOR, SKILL_BY_ID } from '../run/skills';
+import { GEAR, GEAR_RARITY_COLOR, GearId } from '../run/gear';
 
 const DEPTH = 100;
+const SLOT = 24;
+/** Barra de equipamento: arma 1, arma 2, granada, skill Q, skill E. */
+const GEAR_SLOTS = [
+  { label: '1', x: 6 },
+  { label: '2', x: 32 },
+  { label: 'L', x: 64 },
+  { label: 'Q', x: 96 },
+  { label: 'E', x: 122 },
+];
+const GEAR_Y = GAME_HEIGHT - 44;
 
 /**
  * HUD estilo arcade adaptado à run:
@@ -19,6 +30,11 @@ export class Hud {
   private frags: Phaser.GameObjects.Text;
   private skillRow: Phaser.GameObjects.Container;
   private skillKey = '';
+  private bombInf: Phaser.GameObjects.Image;
+  private gearGfx: Phaser.GameObjects.Graphics;
+  private gearIcons: Phaser.GameObjects.Image[] = [];
+  private gearTexts: Phaser.GameObjects.Text[] = [];
+  private gearKey = '';
   private boss?: { name: Phaser.GameObjects.Text; bar: Phaser.GameObjects.Graphics; ratio: number };
 
   constructor(private gs: GameScene, missionLabel: string) {
@@ -41,6 +57,14 @@ export class Hud {
     this.armsInf = fixed(gs.add.image(121, 16, 'hud_inf').setOrigin(0));
     this.armsText = text(114, 15, 8, '#ffd84a');
     this.bombText = text(158, 15, 8, '#ffd84a');
+    this.bombInf = fixed(gs.add.image(161, 16, 'hud_inf').setOrigin(0).setVisible(false));
+
+    // Equipamento (rodapé esquerdo)
+    this.gearGfx = fixed(gs.add.graphics());
+    GEAR_SLOTS.forEach((s) => {
+      text(s.x + SLOT - 7, GEAR_Y + SLOT - 8, 8, '#6a6488').setText(s.label).setDepth(DEPTH + 1);
+      this.gearTexts.push(text(s.x + SLOT / 2, GEAR_Y + 8, 8, '#ffffff').setOrigin(0.5, 0).setDepth(DEPTH + 1));
+    });
 
     // Relógio da run
     this.clock = text(GAME_WIDTH / 2, 3, 16, '#ffcf3a', '#8b1e10').setOrigin(0.5, 0);
@@ -63,7 +87,10 @@ export class Hud {
     const inf = p.ammo === Infinity;
     this.armsInf.setVisible(inf);
     this.armsText.setVisible(!inf).setText(String(p.ammo));
-    this.bombText.setText(String(run.bombs));
+    const pi = run.loadout.grenade === 'raspberry';
+    this.bombInf.setVisible(pi);
+    this.bombText.setVisible(!pi).setText(String(run.bombs));
+    this.drawGear();
     const s = Math.floor(run.timeMs / 1000);
     this.clock.setText(`${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`);
     this.frags.setText(String(run.fragments));
@@ -73,6 +100,62 @@ export class Hud {
       this.drawSkills();
     }
     if (this.boss) this.drawBossBar();
+  }
+
+  private gearIds(): (GearId | null)[] {
+    const l = this.gs.run.loadout;
+    return [l.weapons[0], l.weapons[1], l.grenade, l.abilities[0], l.abilities[1]];
+  }
+
+  private drawGear() {
+    const ids = this.gearIds();
+    const key = ids.join(',');
+    if (key !== this.gearKey) {
+      this.gearKey = key;
+      this.gearIcons.forEach((i) => i.destroy());
+      this.gearIcons = ids.map((id, i) => {
+        const s = GEAR_SLOTS[i];
+        const img = this.gs.add.image(s.x + SLOT / 2, GEAR_Y + SLOT / 2, id ? GEAR[id].icon.key : 'gear_icons', id ? GEAR[id].icon.frame : 0);
+        const big = Math.max(img.width, img.height);
+        img.setScale(id === 'pendrive' ? 1.6 : Math.min(1, (SLOT - 4) / big)).setVisible(id !== null).setScrollFactor(0).setDepth(DEPTH);
+        return img;
+      });
+    }
+    const now = this.gs.time.now;
+    const arsenal = this.gs.player.arsenal;
+    const g = this.gearGfx.clear();
+    ids.forEach((id, i) => {
+      const s = GEAR_SLOTS[i];
+      const color = id ? Phaser.Display.Color.HexStringToColor(GEAR_RARITY_COLOR[GEAR[id].rarity]).color : 0x3a3350;
+      g.fillStyle(0x0c0a18, 0.8).fillRect(s.x, GEAR_Y, SLOT, SLOT);
+      let border = color;
+      let overlay = 0;
+      let label = '';
+      if (id === 'shield144') {
+        const st = arsenal.shieldState(now);
+        if (st.cooldown) {
+          overlay = st.ratio;
+          label = String(Math.ceil((st.ratio * 8000) / 1000));
+        } else {
+          // golpes restantes antes da tela rachar
+          for (let k = 0; k < 5; k++) g.fillStyle(k < 5 - st.hits ? 0x8ff0ff : 0x2a2d3a, 1).fillRect(s.x + 3 + k * 4, GEAR_Y + SLOT - 4, 3, 2);
+        }
+      }
+      if (i >= 3 && id) {
+        const st = arsenal.abilityState(i - 3, now);
+        if (st.state === 'active') {
+          border = Math.floor(now / 150) % 2 ? 0xffffff : color;
+          g.fillStyle(0xffcf3a, 1).fillRect(s.x + 1, GEAR_Y + SLOT - 3, (SLOT - 2) * st.ratio, 2);
+        } else if (st.state === 'cooldown') {
+          overlay = st.ratio;
+          label = String(Math.ceil(st.left / 1000));
+        }
+      }
+      this.gearIcons[i]?.setAlpha(overlay ? 0.45 : 1);
+      if (overlay) g.fillStyle(0x000000, 0.55).fillRect(s.x, GEAR_Y + SLOT * (1 - overlay), SLOT, SLOT * overlay);
+      g.lineStyle(1, border, id ? 1 : 0.6).strokeRect(s.x + 0.5, GEAR_Y + 0.5, SLOT - 1, SLOT - 1);
+      this.gearTexts[i].setText(label);
+    });
   }
 
   private drawHp(hp: number, max: number) {

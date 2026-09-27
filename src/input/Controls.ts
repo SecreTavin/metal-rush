@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 
-export type Action = 'left' | 'right' | 'up' | 'down' | 'primary' | 'secondary' | 'jump' | 'grenade' | 'dash';
+export type Action = 'left' | 'right' | 'up' | 'down' | 'primary' | 'secondary' | 'jump' | 'grenade' | 'dash' | 'skill1' | 'skill2';
 
 export type MouseButton = 'left' | 'right' | 'middle';
 
@@ -24,6 +24,8 @@ export const DEFAULT_BINDINGS: Record<Action, Binding[]> = {
   jump: [key('K'), key('X'), key('SPACE')],
   grenade: [key('L'), key('C')],
   dash: [key('SHIFT'), key('I')],
+  skill1: [key('Q')],
+  skill2: [key('E')],
 };
 
 const BUTTON_INDEX: Record<MouseButton, number> = { left: 0, middle: 1, right: 2 };
