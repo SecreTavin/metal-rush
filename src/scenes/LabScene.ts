@@ -12,6 +12,8 @@ type Item =
 
 const ROW_H = 13;
 const LIST_Y = 46;
+/** Caixa de descrição (à direita); cresce com o texto, sem invadir o herói. */
+const INFO = { x: 294, y: 38, w: 178, minH: 70, maxH: 112, pad: 8 };
 
 /**
  * Laboratório: entre as runs, gasta os fragmentos de dados em melhorias permanentes
@@ -24,6 +26,7 @@ export class LabScene extends Phaser.Scene {
   private cursor!: Phaser.GameObjects.Text;
   private bank!: Phaser.GameObjects.Text;
   private info!: Phaser.GameObjects.Text;
+  private infoBox!: Phaser.GameObjects.Graphics;
   private toast!: Phaser.GameObjects.Text;
 
   constructor() {
@@ -54,7 +57,13 @@ export class LabScene extends Phaser.Scene {
     this.tweens.add({ targets: this.cursor, x: 17, duration: 300, yoyo: true, repeat: -1 });
 
     this.info = this.add
-      .text(300, 60, '', { fontFamily: FONT, fontSize: '8px', color: '#e8e0ff', wordWrap: { width: 170 }, lineSpacing: 4 })
+      .text(INFO.x + INFO.pad, INFO.y + INFO.pad, '', {
+        fontFamily: FONT,
+        fontSize: '8px',
+        color: '#e8e0ff',
+        wordWrap: { width: INFO.w - INFO.pad * 2 - 2 },
+        lineSpacing: 3,
+      })
       .setStroke('#000000', 3);
     this.toast = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT - 26, '', { fontFamily: FONT, fontSize: '8px', color: '#ffcf3a' }).setOrigin(0.5).setStroke('#000000', 3);
     this.add
@@ -80,8 +89,7 @@ export class LabScene extends Phaser.Scene {
     for (let y = 0; y < GAME_HEIGHT; y += 20) g.lineBetween(0, y, GAME_WIDTH, y);
     g.fillStyle(0x0c0a18, 0.85).fillRect(8, 38, 280, 206);
     g.lineStyle(1, 0x4a2a6a, 1).strokeRect(8.5, 38.5, 280, 206);
-    g.fillStyle(0x0c0a18, 0.85).fillRect(294, 38, 178, 118);
-    g.lineStyle(1, 0x4a2a6a, 1).strokeRect(294.5, 38.5, 178, 118);
+    this.infoBox = this.add.graphics();
     // tubos de dados subindo no fundo
     this.add
       .particles(0, 0, 'bits', {
@@ -124,19 +132,29 @@ export class LabScene extends Phaser.Scene {
     const r = this.rows[this.index];
     this.cursor.setY(r.y);
     this.info.setText(this.describe(this.items[this.index]));
+    const h = Phaser.Math.Clamp(Math.ceil(this.info.height) + INFO.pad * 2, INFO.minH, INFO.maxH);
+    this.infoBox
+      .clear()
+      .fillStyle(0x0c0a18, 0.85)
+      .fillRect(INFO.x, INFO.y, INFO.w, h)
+      .lineStyle(1, 0x4a2a6a, 1)
+      .strokeRect(INFO.x + 0.5, INFO.y + 0.5, INFO.w, h);
   }
 
   private describe(item: Item) {
     const save = loadSave();
     if (item.kind === 'start') {
-      return `COMEÇA UMA NOVA RUN NA MISSÃO 1.\n\nRUNS: ${save.runs}\nVITORIAS: ${save.wins}\nMELHOR: MISSÃO ${Math.max(1, save.bestMission)}`;
+      return `NOVA RUN NA MISSÃO 1.\n\nRUNS: ${save.runs}\nVITORIAS: ${save.wins}\nMELHOR: MISSÃO ${Math.max(1, save.bestMission)}`;
     }
     if (item.kind === 'upgrade') {
       const u = META_UPGRADES.find((m) => m.id === item.id)!;
-      return `${u.name}\n\n${u.desc}`;
+      const lvl = upgradeLevel(save, u.id);
+      const next = lvl >= u.costs.length ? 'NIVEL MAXIMO' : `CUSTO: ${u.costs[lvl]}`;
+      return `${u.name}\n\n${u.desc}\n\n${next}`;
     }
     const s = SKILLS.find((k) => k.id === item.id)!;
-    return `${s.name}  ${s.icon}\n\n${s.desc}\n\nPASSA A APARECER NOS TERMINAIS DE UPGRADE.`;
+    const status = save.unlocked.includes(s.id) ? 'JA NO SORTEIO' : `CUSTO: ${s.unlockCost}`;
+    return `${s.name}\n\n${s.desc}\n\n${status}`;
   }
 
   private confirm() {
