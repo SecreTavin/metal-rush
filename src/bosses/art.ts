@@ -9,6 +9,7 @@ import { makeSheet, makeTexture, mulberry32, rand } from '../gfx/art/kit';
 
 const STEEL = ['#07080c', '#12151c', '#1c212b', '#282e3a', '#363e4d', '#4a5364', '#65707f', '#8a95a4', '#b8c0cc', '#e0e6ee', '#ff2a3a', '#a01018', '#ffd0c0', '#f2c230', '#6ae0ff'];
 const FORGE = [...STEEL, '#ff7a2a', '#ffc860', '#fff0b0', '#c8401c', '#5a1a0a'];
+const WORM = ['#07080c', '#12151c', '#1c212b', '#282e3a', '#363e4d', '#4a5364', '#65707f', '#8a95a4', '#b8c0cc', '#e0e6ee', '#0e2a14', '#1a5a24', '#2a9a3a', '#5aff5a', '#c8ffb0', '#3a2a1a'];
 const EYE = ['#02030a', '#0c1226', '#1c2848', '#2a3a60', '#4a5a80', '#8a9ac0', '#ff2a5a', '#8a1040', '#ffd0dc', '#ffffff', '#00e0ff'];
 
 type Ctx = CanvasRenderingContext2D;
@@ -69,8 +70,148 @@ export function generateBossArt(scene: Phaser.Scene) {
   if (scene.textures.exists('sent_hull')) return;
   sentinel(scene);
   forger(scene);
+  worm(scene);
   eye(scene);
   shared(scene);
+}
+
+// ============================================================== VERME-MÃE (cabeça apontando para a direita)
+
+function worm(scene: Phaser.Scene) {
+  const opts = { palette: WORM, dither: 6 };
+  // segmento do corpo: anel blindado com faixa verde e espinhos
+  makeTexture(scene, 'worm_seg', 42, 42, (ctx) => {
+    ctx.fillStyle = '#07080c';
+    ctx.beginPath();
+    ctx.arc(21, 21, 19, 0, Math.PI * 2);
+    ctx.fill();
+    const g = ctx.createRadialGradient(15, 13, 2, 21, 21, 19);
+    g.addColorStop(0, '#8a95a4');
+    g.addColorStop(0.5, '#4a5364');
+    g.addColorStop(1, '#1c212b');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(21, 21, 17, 0, Math.PI * 2);
+    ctx.fill();
+    // placas sobrepostas
+    ctx.strokeStyle = '#12151c';
+    ctx.lineWidth = 2;
+    for (const a of [-0.9, 0, 0.9]) {
+      ctx.beginPath();
+      ctx.arc(21, 21, 17, a - 0.35, a + 0.35);
+      ctx.stroke();
+    }
+    ctx.fillStyle = '#1a5a24';
+    ctx.fillRect(4, 19, 34, 5);
+    ctx.fillStyle = '#5aff5a';
+    ctx.fillRect(5, 20, 32, 2);
+    ctx.fillStyle = '#c8ffb0';
+    ctx.fillRect(12, 20, 6, 1);
+    // espinhos no dorso
+    ctx.fillStyle = '#b8c0cc';
+    for (const x of [13, 21, 29]) {
+      ctx.beginPath();
+      ctx.moveTo(x - 3, 5);
+      ctx.lineTo(x, -1);
+      ctx.lineTo(x + 3, 5);
+      ctx.fill();
+    }
+    rivets(ctx, [[10, 12], [31, 12], [10, 30], [31, 30]]);
+  }, opts);
+  makeTexture(scene, 'worm_tail', 26, 26, (ctx) => {
+    ctx.fillStyle = '#07080c';
+    ctx.beginPath();
+    ctx.arc(13, 13, 12, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#363e4d';
+    ctx.beginPath();
+    ctx.arc(13, 13, 10, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#2a9a3a';
+    ctx.fillRect(3, 12, 20, 2);
+  }, opts);
+  // cabeça: cone blindado com sensores e o injetor exposto no alto
+  makeTexture(scene, 'worm_head', 74, 60, (ctx) => {
+    plate(ctx, [[2, 10], [30, 0], [60, 12], [72, 30], [60, 48], [30, 60], [2, 50]], '#8a95a4', '#1c212b');
+    plate(ctx, [[8, 18], [34, 10], [54, 20], [62, 30], [54, 40], [34, 50], [8, 42]], '#65707f', '#12151c');
+    // fileira de sensores verdes
+    for (const [x, y] of [[40, 22], [48, 26], [40, 38], [48, 34]]) {
+      ctx.fillStyle = '#07080c';
+      ctx.fillRect(x - 1, y - 1, 5, 4);
+      ctx.fillStyle = '#5aff5a';
+      ctx.fillRect(x, y, 3, 2);
+      ctx.fillStyle = '#c8ffb0';
+      ctx.fillRect(x, y, 1, 1);
+    }
+    // encaixe do injetor (o núcleo brilhante fica por cima, em outra textura)
+    ctx.fillStyle = '#07080c';
+    ctx.fillRect(16, 20, 16, 20);
+    ctx.fillStyle = '#0e2a14';
+    ctx.fillRect(18, 22, 12, 16);
+    hazard(ctx, 4, 44, 22, 4);
+    rivets(ctx, [[10, 14], [26, 8], [10, 46], [26, 52], [58, 20], [58, 40]]);
+  }, opts);
+  makeTexture(scene, 'worm_core', 20, 22, (ctx) => {
+    // ampola do injetor: o ponto fraco
+    ctx.fillStyle = '#07080c';
+    ctx.fillRect(3, 0, 14, 22);
+    const g = ctx.createLinearGradient(0, 0, 0, 22);
+    g.addColorStop(0, '#c8ffb0');
+    g.addColorStop(0.4, '#5aff5a');
+    g.addColorStop(1, '#1a5a24');
+    ctx.fillStyle = g;
+    ctx.fillRect(5, 2, 10, 18);
+    ctx.fillStyle = '#e0e6ee';
+    ctx.fillRect(7, 3, 1, 14);
+    ctx.fillStyle = '#4a5364';
+    ctx.fillRect(1, 0, 18, 2);
+    ctx.fillRect(1, 20, 18, 2);
+  }, opts);
+  // mandíbula (a de baixo é a mesma espelhada)
+  makeTexture(scene, 'worm_jaw', 40, 14, (ctx) => {
+    ctx.fillStyle = '#07080c';
+    ctx.beginPath();
+    ctx.moveTo(0, 2);
+    ctx.lineTo(28, 0);
+    ctx.lineTo(40, 10);
+    ctx.lineTo(30, 8);
+    ctx.lineTo(0, 12);
+    ctx.fill();
+    ctx.fillStyle = '#b8c0cc';
+    ctx.beginPath();
+    ctx.moveTo(2, 4);
+    ctx.lineTo(27, 2);
+    ctx.lineTo(36, 8);
+    ctx.lineTo(28, 6);
+    ctx.lineTo(2, 9);
+    ctx.fill();
+    ctx.fillStyle = '#e0e6ee';
+    for (let x = 8; x < 28; x += 5) ctx.fillRect(x, 9, 2, 3);
+  }, opts);
+  makeTexture(scene, 'worm_glob', 12, 12, (ctx) => {
+    ctx.fillStyle = '#1a5a24';
+    ctx.beginPath();
+    ctx.arc(6, 6, 5.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#5aff5a';
+    ctx.beginPath();
+    ctx.arc(6, 6, 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#c8ffb0';
+    ctx.fillRect(3, 3, 2, 2);
+  });
+  makeTexture(scene, 'worm_crack', 70, 10, (ctx) => {
+    ctx.strokeStyle = '#5aff5a';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, 6);
+    for (let x = 5; x <= 70; x += 5) ctx.lineTo(x, 6 + (x % 10 ? -3 : 3));
+    for (const x of [15, 30, 45, 60]) {
+      ctx.moveTo(x, 6);
+      ctx.lineTo(x + rand(mulberry32(x), -4, 4), 0);
+    }
+    ctx.stroke();
+  });
 }
 
 // ============================================================== SENTINELA (virado para a direita)

@@ -2,11 +2,14 @@ import { buildMission, chunk, MissionSource } from './generator';
 import { MISSION_1 } from './mission1';
 import { MISSION_2 } from './mission2';
 import { MISSION_3 } from './mission3';
+import { MISSION_4 } from './mission4';
+import { EXTRAS_M1, EXTRAS_M2, EXTRAS_M3, EXTRAS_M4 } from './extras';
 import type { LevelData } from './types';
 
 /*
- * Campanha: cada missão é montada a cada run a partir da fase fonte (mission1..3.ts),
- * cortada nos pontos abaixo. Salas de upgrade e arenas dos chefes são trechos fixos.
+ * Campanha: cada missão é montada a cada run a partir da fase fonte (mission1..4.ts),
+ * cortada nos pontos abaixo, mais os trechos extras (extras.ts). Cada missão tem duas
+ * salas de upgrade no caminho e termina na arena do chefe.
  */
 
 export const MISSION_SOURCES: MissionSource[] = [
@@ -17,7 +20,8 @@ export const MISSION_SOURCES: MissionSource[] = [
     boss: 'sentinel',
     layout: MISSION_1,
     cuts: [0, 620, 1460, 2080, 2600, 3400, 4300, 5120],
-    mids: 5,
+    extras: EXTRAS_M1,
+    mids: 9,
     shrine: chunk(320, 'shrine', {
       terminals: [{ x: 160 }],
       interactives: [{ x: 60, kind: 'lamp' }, { x: 250, kind: 'neon' }],
@@ -37,7 +41,8 @@ export const MISSION_SOURCES: MissionSource[] = [
     boss: 'forger',
     layout: MISSION_2,
     cuts: [0, 760, 1300, 2000, 2620, 3460, 4360, 5260],
-    mids: 5,
+    extras: EXTRAS_M2,
+    mids: 9,
     shrine: chunk(320, 'shrine', {
       terminals: [{ x: 160 }],
       interactives: [{ x: 70, kind: 'beacon' }, { x: 250, kind: 'beacon' }],
@@ -52,12 +57,34 @@ export const MISSION_SOURCES: MissionSource[] = [
   },
   {
     name: 'MISSÃO 3',
+    subtitle: 'ZONA DE CONTAGIO',
+    theme: 'contagion',
+    boss: 'worm',
+    layout: MISSION_3,
+    cuts: [0, 700, 1500, 2300, 3100, 3900, 4700, 5500],
+    extras: EXTRAS_M3,
+    mids: 9,
+    shrine: chunk(320, 'shrine', {
+      terminals: [{ x: 160 }],
+      interactives: [{ x: 60, kind: 'beacon' }, { x: 260, kind: 'beacon' }],
+      decor: [{ x: 100, kind: 'canister' }, { x: 230, kind: 'pylon' }],
+    }),
+    arena: chunk(640, 'arena', {
+      platforms: [{ x: 60, y: 150, w: 90 }, { x: 490, y: 150, w: 90 }],
+      interactives: [{ x: 30, kind: 'beacon' }, { x: 610, kind: 'beacon' }],
+      decor: [{ x: 200, kind: 'scrap' }, { x: 440, kind: 'scrap' }],
+      foreground: [{ x: 320, kind: 'tendrils' }],
+    }),
+  },
+  {
+    name: 'MISSÃO 4',
     subtitle: 'NUCLEO DA IA',
     theme: 'core',
     boss: 'eye',
-    layout: MISSION_3,
+    layout: MISSION_4,
     cuts: [0, 580, 1260, 2060, 2600, 3420, 4260, 5220],
-    mids: 5,
+    extras: EXTRAS_M4,
+    mids: 9,
     shrine: chunk(320, 'shrine', {
       terminals: [{ x: 160 }],
       interactives: [{ x: 60, kind: 'beacon' }],

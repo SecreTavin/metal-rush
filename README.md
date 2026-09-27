@@ -29,15 +29,15 @@ Abra http://localhost:5173. Use `?debug` na URL para ver as caixas de colisão.
 
 ## Como funciona (Metal Slug + Dead Cells)
 
-Cada partida é uma **run**: você atravessa as 3 missões seguidas, cada uma terminando num **chefe**.
+Cada partida é uma **run**: você atravessa as 4 missões seguidas, cada uma terminando num **chefe**.
 Morreu, a run acaba e você volta ao **Laboratório** — mas os fragmentos coletados ficam.
 
 - **Vida (HP)**: o herói aguenta alguns golpes; buracos custam 2 de vida.
 - **Skills**: terminais de upgrade na fase e após cada chefe oferecem **3 skills** — escolha 1.
 - **Fragmentos de dados**: caem dos robôs, destrutíveis e chefes. No Laboratório compram
   melhorias permanentes (vida, pendrives, skill inicial, auto-reparo, mais fragmentos) e liberam novas skills.
-- **Fases por trechos**: cada missão é montada a cada run com trechos embaralhados da fase original,
-  uma sala de upgrade e a arena do chefe. Nenhuma run é igual.
+- **Fases por trechos**: cada missão é montada a cada run com 9 trechos sorteados (da fase original
+  e dos trechos extras), duas salas de upgrade, pelo menos duas emboscadas e a arena do chefe. Nenhuma run é igual.
 
 ### Skills
 
@@ -64,7 +64,7 @@ Morreu, a run acaba e você volta ao **Laboratório** — mas os fragmentos cole
 
 ### Armas e itens
 
-Cada missão tem caches de equipamento (um no começo, outro antes da sala de upgrade, e o chefe solta um raro ou melhor).
+Cada missão tem caches de equipamento (um no começo, um antes de cada sala de upgrade, e o chefe solta um raro ou melhor).
 Chegue perto e aperte **Cima** para escolher onde equipar; o item trocado cai no chão.
 O herói leva **2 armas** (clique esquerdo / direito), **até 2 skills ativas** (Q / E) e **1 granada** (L).
 
@@ -84,7 +84,8 @@ Os sprites são gerados por `tools/weapons/build_weapons.py` (a prancha `tools/w
 |---|---|---|
 | 1 | **Sentinela S-01** | Mecha bípede: rajada de plasma, chuva de mísseis com alvos no chão, pisão com ondas de choque |
 | 2 | **Forjador** | Fornalha-mãe: martelos no teto, metal derretido em arco, núcleo exposto (ponto fraco) |
-| 3 | **O Olho** | A própria IA: laser que varre o chão, anéis de projéteis, mergulho e invocação de robôs |
+| 3 | **Verme-Mãe** | Verme mecânico sob o chão: rachaduras avisam onde sai, mordida em arco, cuspe de vírus (poças), fabrica Infectados; ponto fraco: o injetor na cabeça |
+| 4 | **O Olho** | A própria IA: laser que varre o chão, anéis de projéteis, mergulho e invocação de robôs |
 
 Todos entram na fase 2 abaixo de 50% de vida. Partes blindadas mostram "BLOQUEADO".
 
@@ -94,12 +95,13 @@ Todos entram na fase 2 abaixo de 50% de vida. Partes blindadas mostram "BLOQUEAD
 |---|---|---|
 | 1 | **Ruínas de Neo-SP** | Metrópole em ruínas à noite: chuva, relâmpagos, neon, Torre da IA, monotrilho, carros voadores |
 | 2 | **Fábrica de Sintéticos** | Galpão onde os robôs são fabricados: linha de montagem, fornalhas, esteiras, prensas |
-| 3 | **Núcleo da IA** | O coração digital: o Olho gigante, torres de servidores, chuva de dados e interferências |
+| 3 | **Zona de Contágio** | Onde a IA injeta o vírus worm: ruínas em chamas, névoa tóxica, torre-seringa pulsando, robôs imperfeitos sofrendo ao fundo, poças de vírus e cabos-verme que estouram do chão |
+| 4 | **Núcleo da IA** | O coração digital: o Olho gigante, torres de servidores, chuva de dados e interferências |
 
 ### Elementos dinâmicos das fases
 
 - **Plataformas**: móveis (elevadores, carga suspensa), que desabam ao pisar e de luz sólida que aparecem e somem
-- **Perigos**: esteiras que empurram, prensas hidráulicas, grades de laser, cabos energizados em poças, respiros de vapor que lançam o jogador
+- **Perigos**: esteiras que empurram, prensas hidráulicas, grades de laser, cabos energizados em poças, respiros de vapor que lançam o jogador, poças de vírus e cabos-verme que estouram do chão
 - **Destrutíveis**: barris explosivos, carros, geradores e nós de dados — as explosões ferem robôs e detonam objetos próximos (reação em cadeia)
 - **Interativos**: câmeras que seguem o jogador, painéis holográficos que falham ao levar tiro, postes e letreiros de neon que quebram, sirenes de alarme
 - **Emboscadas**: a câmera trava, soa o alarme e robôs chegam por teletransporte em ondas; ao limpar, aparece "GO"
@@ -117,7 +119,8 @@ src/
     GameScene.ts        gameplay: câmera, colisões, run, chefes
   level/
     types.ts            formato de uma fase (LevelData)
-    mission1..3.ts      fases fonte (bibliotecas de trechos)
+    mission1..4.ts      fases fonte (bibliotecas de trechos)
+    extras.ts           trechos extras de cada missão
     generator.ts        corta as fases em trechos e monta uma fase nova por run
     missions.ts         campanha: pontos de corte, salas de upgrade e arenas
   run/
@@ -133,7 +136,8 @@ src/
     Theme.ts            interface de tema, camadas de parallax, profundidades
     city.ts             Missão 1: cidade (arte, fundo animado, chuva)
     factory.ts          Missão 2: fábrica
-    core.ts             Missão 3: núcleo da IA
+    contagion.ts        Missão 3: zona de contágio
+    core.ts             Missão 4: núcleo da IA
     draw.ts             desenho compartilhado (janelas, neon, cabos, grafite)
   world/
     World.ts            elementos dinâmicos e interativos das fases
@@ -152,12 +156,13 @@ src/
 
 ### Criando ou editando uma fase
 
-As fases fonte (`src/level/mission1..3.ts`) posicionam chão (e buracos), plataformas, perigos,
+As fases fonte (`src/level/mission1..4.ts`) posicionam chão (e buracos), plataformas, perigos,
 destrutíveis, interativos, inimigos, emboscadas, itens e decoração por coordenadas x (o chão fica em y=226).
 Em `src/level/missions.ts`, os `cuts` dizem onde cortar em trechos — escolha pontos em chão contínuo,
-sem elementos atravessando o corte. Salas de upgrade e arenas são trechos declarados ali mesmo.
+sem elementos atravessando o corte. Salas de upgrade e arenas são trechos declarados ali mesmo;
+trechos extras (desenhados à parte, com x relativo ao trecho) ficam em `src/level/extras.ts`.
 
-Em modo de desenvolvimento (`npm run dev`), as teclas **1**, **2** e **3** no menu começam uma run direto na missão.
+Em modo de desenvolvimento (`npm run dev`), as teclas **1** a **4** no menu começam uma run direto na missão.
 
 ### Personagem principal
 
@@ -190,11 +195,13 @@ surtos de interferência). Ao serem destruídos, desmontam: o crânio e as peça
 |---|---|
 | **Exterminador** (`exterminator`) | Anda devagar, mantém distância e dispara plasma com o rifle |
 | **Rastreador** (`hunter`) | Corre curvado até o jogador e ataca com as garras |
+| **Infectado** (`infected`) | Rastreador tomado pelo worm: anda aos trancos, dá botes e deixa uma poça de vírus ao morrer |
 
 Os sprites são gerados por um "rig" de ossos a partir do esboço em `tools/enemy/reference_east.png`:
 
 ```bash
 python3 tools/enemy/build_enemy.py
+python3 tools/enemy/build_infected.py   # Infectado (a partir do Rastreador)
 ```
 
 Poses, proporções e novas variantes ficam nesse script; os atributos (vida, velocidade, alcance) em

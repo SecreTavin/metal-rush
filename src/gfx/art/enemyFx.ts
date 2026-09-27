@@ -80,9 +80,9 @@ export function generateEnemyFx(scene: Phaser.Scene) {
 
 /** Animações dos robôs (spritesheets gerados por tools/enemy/build_enemy.py). */
 export function createEnemyAnimations(scene: Phaser.Scene) {
-  for (const key of ['bot_soldier', 'bot_hunter']) {
+  for (const key of ['bot_soldier', 'bot_hunter', 'bot_infected']) {
     const f = (list: number[]) => list.map((frame) => ({ key, frame }));
-    const fast = key === 'bot_hunter';
+    const fast = key !== 'bot_soldier';
     scene.anims.create({ key: `${key}-idle`, frames: f([0, 1, 2, 3]), frameRate: 4, repeat: -1 });
     scene.anims.create({ key: `${key}-run`, frames: f([4, 5, 6, 7, 8, 9]), frameRate: fast ? 15 : 9, repeat: -1 });
     scene.anims.create({ key: `${key}-jump`, frames: f([6]) });

@@ -15,6 +15,11 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
   private nextShot: number;
   private nextClaw = 0;
   private attacking = false;
+  /** Infectado: surto de velocidade / travada e bote. */
+  private stutterUntil = 0;
+  private stutterMul = 1;
+  private nextLunge = 0;
+  private lunging = false;
   private eyeGlow: Phaser.GameObjects.Image;
 
   constructor(
@@ -29,6 +34,7 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     gs.add.existing(this);
     this.setDepth(9);
     this.eyeGlow = gs.add.image(x, y, 'eye_glow').setDepth(9).setBlendMode(Phaser.BlendModes.ADD);
+    if (def.behavior === 'infected') this.eyeGlow.setTint(0x7aff5a);
     gs.tweens.add({ targets: this.eyeGlow, alpha: { from: 0.5, to: 1 }, duration: 400, yoyo: true, repeat: -1 });
     this.on(Phaser.Animations.Events.ANIMATION_COMPLETE, this.onAnimComplete, this);
     this.on(Phaser.Animations.Events.ANIMATION_UPDATE, this.onAnimFrame, this);
@@ -69,6 +75,7 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
       } else {
         const reach = this.def.clawReach ?? 26;
         if (dist > reach - 4) vx = this.facing * this.def.speed;
+        if (this.def.behavior === 'infected') vx = this.infectedMove(time, vx, dist, onGround);
         if (dist < reach && onGround && time > this.nextClaw && Math.abs(p.y - this.y) < 30) {
           this.startAttack();
           this.nextClaw = time + (this.def.clawCooldown ?? 900);
@@ -76,16 +83,39 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
       }
     }
 
+    if (this.lunging) {
+      if (onGround && this.body.velocity.y >= 0) this.lunging = false;
+      else vx = this.body.velocity.x;
+    }
     this.setVelocityX(this.attacking ? 0 : vx);
     this.setFlipX(this.facing < 0);
     if (!this.attacking) this.anims.play(`${this.def.texture}-${!onGround ? 'jump' : vx ? 'run' : 'idle'}`, true);
 
     // "Surto" do vírus: pisca vermelho de vez em quando
-    if (Math.random() < 0.004) {
-      this.setTint(0xff5a5a);
+    if (Math.random() < (this.def.behavior === 'infected' ? 0.012 : 0.004)) {
+      this.setTint(this.def.behavior === 'infected' ? 0x7aff5a : 0xff5a5a);
       this.gs.time.delayedCall(70, () => this.active && !this.dying && this.clearTint());
     }
     this.followEye();
+  }
+
+  /** Infectado: alterna surtos de velocidade com travadas (o vírus reescrevendo o firmware) e dá botes. */
+  private infectedMove(time: number, vx: number, dist: number, onGround: boolean) {
+    if (time > this.stutterUntil) {
+      const twitch = Math.random() < 0.35;
+      this.stutterMul = twitch ? 0 : Phaser.Math.FloatBetween(1.1, 1.8);
+      this.stutterUntil = time + (twitch ? Phaser.Math.Between(180, 420) : Phaser.Math.Between(300, 700));
+      if (twitch) this.x += Phaser.Math.Between(-2, 2);
+    }
+    if (onGround && !this.lunging && dist > 48 && dist < 120 && time > this.nextLunge) {
+      this.lunging = true;
+      this.nextLunge = time + Phaser.Math.Between(1600, 2600);
+      this.setVelocityY(-230);
+      this.setVelocityX(this.facing * 210);
+      this.gs.glitchBars(this.x, this.y, [0x7aff5a, 0x1a3a20]);
+      return this.facing * 210;
+    }
+    return vx * this.stutterMul;
   }
 
   private followEye() {
@@ -147,6 +177,7 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.clearTint();
     this.gs.addScore(this.def.score, this.x, this.y - 30);
     this.gs.robotDestroyed(this);
+    if (this.def.behavior === 'infected') this.gs.world.spawnOoze(this.x, 30, 4500);
     this.eyeGlow.destroy();
     this.anims.play(`${this.def.texture}-die`);
   }

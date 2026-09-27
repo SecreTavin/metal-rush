@@ -1,9 +1,9 @@
 import type { EnemyType } from '../entities/enemyTypes';
 
-export type ThemeId = 'city' | 'factory' | 'core';
+export type ThemeId = 'city' | 'factory' | 'contagion' | 'core';
 
 /** Chefes: um por missão. */
-export type BossType = 'sentinel' | 'forger' | 'eye';
+export type BossType = 'sentinel' | 'forger' | 'worm' | 'eye';
 
 /** Coberturas sólidas apoiadas no chão (bloqueiam tiros). */
 export type BlockKind = 'barricade' | 'crate' | 'container' | 'server';
@@ -22,7 +22,11 @@ export type HazardDef =
   /** Respiro de vapor / plataforma de salto: lança o jogador para cima. */
   | { type: 'vent'; x: number; power?: number }
   /** Cabo energizado caído numa poça: eletrifica o trecho periodicamente. */
-  | { type: 'livewire'; x: number; w: number; period: number; phase?: number };
+  | { type: 'livewire'; x: number; w: number; period: number; phase?: number }
+  /** Poça de vírus worm: fere quem pisa (sempre ativa, pulsa). */
+  | { type: 'ooze'; x: number; w: number }
+  /** Cabo-verme que estoura do chão periodicamente (rachaduras brilham antes). */
+  | { type: 'burrow'; x: number; period: number; phase?: number };
 
 export interface MoverDef {
   x: number;

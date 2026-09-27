@@ -17,6 +17,7 @@ export class BootScene extends Phaser.Scene {
     // Robôs-esqueleto inimigos (tools/enemy/build_enemy.py)
     this.load.spritesheet('bot_soldier', 'sprites/bot_soldier.png', { frameWidth: 40, frameHeight: 56 });
     this.load.spritesheet('bot_hunter', 'sprites/bot_hunter.png', { frameWidth: 40, frameHeight: 56 });
+    this.load.spritesheet('bot_infected', 'sprites/bot_infected.png', { frameWidth: 40, frameHeight: 56 });
     this.load.spritesheet('bot_parts', 'sprites/bot_parts.png', { frameWidth: 16, frameHeight: 16 });
     // Armas e itens (tools/weapons/build_weapons.py)
     this.load.spritesheet('gear_icons', 'sprites/gear_icons.png', { frameWidth: 26, frameHeight: 22 });

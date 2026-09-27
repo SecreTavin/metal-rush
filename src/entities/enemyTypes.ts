@@ -1,4 +1,4 @@
-export type EnemyBehavior = 'shooter' | 'hunter';
+export type EnemyBehavior = 'shooter' | 'hunter' | 'infected';
 
 export interface EnemyDef {
   /** Spritesheet 40x56: 0-3 parado, 4-9 andando, 10-11 ataque, 12-14 desabando. */
@@ -53,6 +53,19 @@ export const ENEMIES = {
     clawCooldown: 900,
     eye: { x: 7, y: -12 },
     debris: [0, 1, 1, 3],
+  },
+  /** Infectado: Rastreador tomado pelo worm; anda aos trancos, dá botes e deixa uma poça de vírus ao morrer. */
+  infected: {
+    texture: 'bot_infected',
+    behavior: 'infected',
+    hp: 3,
+    speed: 90,
+    range: 320,
+    score: 250,
+    clawReach: 26,
+    clawCooldown: 800,
+    eye: { x: 7, y: -12 },
+    debris: [0, 1, 3, 3],
   },
 } satisfies Record<string, EnemyDef>;
 

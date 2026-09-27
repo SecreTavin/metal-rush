@@ -23,6 +23,8 @@ export interface MissionSource {
   layout: LevelData;
   /** Pontos de corte (x) em chão contínuo, sem elementos atravessando. O último trecho termina no último corte. */
   cuts: number[];
+  /** Trechos extras desenhados à parte (entram no sorteio junto com os cortes da fase fonte). */
+  extras?: Chunk[];
   /** Quantos trechos do meio entram em cada run. */
   mids: number;
   shrine: Chunk;
@@ -141,13 +143,17 @@ function assemble(chunks: Chunk[]) {
 /** Monta a fase de uma missão para uma run (mesma semente = mesma fase). */
 export function buildMission(source: MissionSource, index: number, seed: number): LevelData {
   const rng = mulberry32(seed);
-  const [start, ...mids] = sliceLevel(source.layout, source.cuts);
-  // garante ao menos uma emboscada entre os trechos sorteados
+  const [start, ...sliced] = sliceLevel(source.layout, source.cuts);
+  const mids = [...sliced, ...(source.extras ?? []).map((c) => ({ ...c, tag: c.ambushes?.length ? ('ambush' as const) : c.tag }))];
+  // garante ao menos duas emboscadas entre os trechos sorteados
   const ambush = shuffle(mids.filter((c) => c.tag === 'ambush'), rng);
   const others = shuffle(mids.filter((c) => c.tag !== 'ambush'), rng);
-  const picked = shuffle([ambush[0], ...others, ...ambush.slice(1)].filter(Boolean).slice(0, source.mids), rng);
-  const shrineAt = 1 + Math.floor(rng() * Math.max(1, picked.length - 1));
-  const order = [start, ...picked.slice(0, shrineAt), source.shrine, ...picked.slice(shrineAt), source.arena];
+  const picked = shuffle([...ambush.slice(0, 2), ...others, ...ambush.slice(2)].filter(Boolean).slice(0, source.mids), rng);
+  // duas salas de upgrade: uma por volta de 1/3 e outra por volta de 2/3 do caminho
+  const n = picked.length;
+  const first = Math.max(1, Math.floor(n / 3) + Math.floor(rng() * 2));
+  const second = Math.min(n, Math.max(first + 2, Math.floor((2 * n) / 3) + Math.floor(rng() * 2)));
+  const order = [start, ...picked.slice(0, first), source.shrine, ...picked.slice(first, second), source.shrine, ...picked.slice(second), source.arena];
   const { data, width, bossX } = assemble(order);
   return {
     ...data,

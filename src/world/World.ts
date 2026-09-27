@@ -39,6 +39,8 @@ interface Shootable {
 interface Hazard {
   def: HazardDef;
   update: (time: number) => void;
+  /** Perigos temporários (poça deixada por um Infectado) somem quando retorna true. */
+  expired?: (time: number) => boolean;
 }
 
 interface Ambush { def: AmbushDef; state: 'waiting' | 'active' | 'done'; wave: number; alive: Enemy[]; nextWaveAt: number }
@@ -115,6 +117,7 @@ export class World {
     for (const ph of this.phasers) this.updatePhaser(ph, time);
     for (const c of this.conveyors) this.updateConveyor(c, dt);
     for (const h of this.hazards) h.update(time);
+    if (this.hazards.some((h) => h.expired?.(time))) this.hazards = this.hazards.filter((h) => !h.expired?.(time));
     this.updateCameras();
     this.updateAmbushes(time);
   }
@@ -229,7 +232,16 @@ export class World {
     if (def.type === 'crusher') this.hazards.push(this.makeCrusher(def));
     else if (def.type === 'laser') this.hazards.push(this.makeLaser(def));
     else if (def.type === 'vent') this.hazards.push(this.makeVent(def));
+    else if (def.type === 'ooze') this.hazards.push(this.makeOoze(def));
+    else if (def.type === 'burrow') this.hazards.push(this.makeBurrow(def));
     else this.hazards.push(this.makeLiveWire(def));
+  }
+
+  /** Poça temporária de vírus (Infectado destruído, cuspe da Verme-Mãe). */
+  spawnOoze(x: number, w: number, duration: number) {
+    const def = { type: 'ooze' as const, x: x - w / 2, w };
+    const h = this.makeOoze(def, duration);
+    this.hazards.push(h);
   }
 
   private playerTouches(rect: Phaser.Geom.Rectangle) {
@@ -393,6 +405,98 @@ export class World {
         if (on) {
           const zone = new Phaser.Geom.Rectangle(def.x, GROUND_Y - 6, def.w, 8);
           if (this.playerTouches(zone)) gs.hurtPlayer();
+        }
+      },
+    };
+  }
+
+  /** Poça de vírus worm: brilha, borbulha e fere quem pisa. */
+  private makeOoze(def: Extract<HazardDef, { type: 'ooze' }>, duration?: number): Hazard {
+    const gs = this.gs;
+    const cx = def.x + def.w / 2;
+    const born = gs.time.now;
+    const pool = gs.add.image(cx, GROUND_Y - 1, 'ooze').setDisplaySize(def.w, 8).setDepth(DEPTH.lip);
+    const glow = gs.add
+      .image(cx, GROUND_Y - 4, 'eye_glow')
+      .setDisplaySize(def.w + 20, 22)
+      .setTint(0x5aff5a)
+      .setBlendMode(Phaser.BlendModes.ADD)
+      .setDepth(DEPTH.lip);
+    const bubbles = gs.add
+      .particles(0, 0, 'ooze_bubble', {
+        x: { min: def.x + 4, max: def.x + def.w - 4 },
+        y: GROUND_Y - 2,
+        speedY: { min: -14, max: -6 },
+        lifespan: 700,
+        alpha: { start: 0.9, end: 0 },
+        frequency: Math.max(60, 5000 / def.w),
+      })
+      .setDepth(DEPTH.hazardFront);
+    let gone = false;
+    if (duration) {
+      pool.setScale(0.05, 1);
+      gs.tweens.add({ targets: pool, displayWidth: def.w, duration: 200 });
+    }
+    return {
+      def,
+      update: (time) => {
+        if (gone) return;
+        const left = duration ? duration - (time - born) : Infinity;
+        const fade = Math.min(1, left / 600);
+        glow.setAlpha((0.35 + Math.sin(time / 220 + cx) * 0.15) * fade);
+        pool.setAlpha(fade);
+        if (left <= 0) {
+          gone = true;
+          pool.destroy();
+          glow.destroy();
+          bubbles.destroy();
+          return;
+        }
+        if (fade > 0.5 && this.playerTouches(new Phaser.Geom.Rectangle(def.x + 3, GROUND_Y - 5, def.w - 6, 7))) gs.hurtPlayer(1);
+      },
+      expired: () => gone,
+    };
+  }
+
+  /** Cabo-verme: rachaduras brilham (aviso), ele estoura do chão, se contorce e volta. */
+  private makeBurrow(def: Extract<HazardDef, { type: 'burrow' }>): Hazard {
+    const gs = this.gs;
+    const SEGS = 7;
+    const crack = gs.add.image(def.x, GROUND_Y - 1, 'burrow_crack').setDepth(DEPTH.lip).setBlendMode(Phaser.BlendModes.ADD).setAlpha(0);
+    const segs = Array.from({ length: SEGS }, () => gs.add.image(def.x, GROUND_Y + 20, 'burrow_seg').setDepth(DEPTH.hazardBack));
+    const head = gs.add.image(def.x, GROUND_Y + 20, 'burrow_head').setDepth(DEPTH.hazardBack);
+    let burst = false;
+    return {
+      def,
+      update: (time) => {
+        const t = cycle(time, def.period, def.phase);
+        // 0-0.55 escondido | 0.55-0.72 aviso | 0.72-0.9 fora | 0.9-1 recolhendo
+        const warn = t >= 0.55 && t < 0.72;
+        crack.setAlpha(warn ? (Math.floor(time / 80) % 2 ? 0.9 : 0.3) : t >= 0.72 && t < 0.95 ? 0.6 : 0);
+        let out = 0;
+        if (t >= 0.72 && t < 0.78) out = Phaser.Math.Easing.Back.Out((t - 0.72) / 0.06);
+        else if (t >= 0.78 && t < 0.9) out = 1;
+        else if (t >= 0.9) out = 1 - (t - 0.9) / 0.1;
+        const height = 64 * out;
+        for (let i = 0; i < SEGS; i++) {
+          const k = i / (SEGS - 1);
+          const y = GROUND_Y + 8 - height * (1 - k);
+          const x = def.x + Math.sin(time / 90 + i * 0.9) * 5 * out * (1 - k * 0.5);
+          segs[i].setPosition(x, y).setVisible(out > 0);
+        }
+        head.setPosition(segs[0].x, segs[0].y - 9).setRotation(Math.sin(time / 90) * 0.25).setVisible(out > 0);
+        if (out > 0.4 && !burst) {
+          burst = true;
+          if (this.onScreen(def.x)) {
+            gs.dust(def.x - 8, GROUND_Y, 0.9);
+            gs.dust(def.x + 8, GROUND_Y, 0.9);
+            gs.cameras.main.shake(80, 0.004);
+          }
+        }
+        if (out === 0) burst = false;
+        if (out > 0.4) {
+          const zone = new Phaser.Geom.Rectangle(def.x - 9, GROUND_Y - height - 18, 18, height + 18);
+          if (this.playerTouches(zone)) gs.hurtPlayer(1, def.x);
         }
       },
     };

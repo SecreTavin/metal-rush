@@ -541,6 +541,85 @@ export function generateWorldArt(scene: Phaser.Scene) {
     ctx.fill();
   });
 
+  // ---------- Zona de Contágio: poça de vírus e cabo-verme que sai do chão
+  makeTexture(scene, 'ooze', 64, 8, (ctx) => {
+    ctx.fillStyle = 'rgba(30,120,40,0.9)';
+    ctx.beginPath();
+    ctx.ellipse(32, 4, 31, 3.4, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(90,255,90,0.95)';
+    ctx.beginPath();
+    ctx.ellipse(32, 3.6, 26, 2.2, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(210,255,190,0.9)';
+    ctx.fillRect(14, 3, 8, 1);
+    ctx.fillRect(40, 4, 10, 1);
+  });
+  makeTexture(scene, 'ooze_bubble', 4, 4, (ctx) => {
+    ctx.fillStyle = 'rgba(160,255,140,0.9)';
+    ctx.fillRect(1, 0, 2, 1);
+    ctx.fillRect(0, 1, 1, 2);
+    ctx.fillRect(3, 1, 1, 2);
+    ctx.fillRect(1, 3, 2, 1);
+  });
+  makeTexture(scene, 'burrow_seg', 14, 14, (ctx) => {
+    ctx.fillStyle = K;
+    ctx.beginPath();
+    ctx.arc(7, 7, 7, 0, Math.PI * 2);
+    ctx.fill();
+    const g = ctx.createLinearGradient(0, 0, 14, 0);
+    g.addColorStop(0, '#1a2e20');
+    g.addColorStop(0.45, '#4a6a52');
+    g.addColorStop(1, '#10200e');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(7, 7, 6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#7aff5a';
+    ctx.fillRect(2, 6, 10, 2);
+    ctx.fillStyle = '#d0ffc0';
+    ctx.fillRect(5, 6, 3, 1);
+  });
+  makeTexture(scene, 'burrow_head', 18, 20, (ctx) => {
+    ctx.fillStyle = K;
+    ctx.beginPath();
+    ctx.moveTo(9, 0);
+    ctx.lineTo(17, 12);
+    ctx.lineTo(14, 20);
+    ctx.lineTo(4, 20);
+    ctx.lineTo(1, 12);
+    ctx.fill();
+    ctx.fillStyle = '#3a5a42';
+    ctx.beginPath();
+    ctx.moveTo(9, 2);
+    ctx.lineTo(15, 12);
+    ctx.lineTo(13, 19);
+    ctx.lineTo(5, 19);
+    ctx.lineTo(3, 12);
+    ctx.fill();
+    // mandíbulas e sensor
+    ctx.fillStyle = '#c8d4c0';
+    ctx.fillRect(3, 2, 2, 5);
+    ctx.fillRect(13, 2, 2, 5);
+    ctx.fillStyle = '#7aff5a';
+    ctx.fillRect(7, 8, 4, 3);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(8, 8, 1, 1);
+  });
+  makeTexture(scene, 'burrow_crack', 36, 6, (ctx) => {
+    ctx.strokeStyle = '#7aff5a';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, 3);
+    for (let x = 4; x <= 36; x += 4) ctx.lineTo(x, 3 + ((x / 4) % 2 ? -2 : 2));
+    ctx.stroke();
+    ctx.moveTo(18, 3);
+    ctx.lineTo(16, 6);
+    ctx.moveTo(10, 3);
+    ctx.lineTo(12, 0);
+    ctx.stroke();
+  });
+
   scene.anims.create({ key: 'steam', frames: [0, 1, 2, 3, 4, 5].map((frame) => ({ key: 'steam', frame })), frameRate: 16 });
   scene.anims.create({ key: 'zap', frames: [0, 1, 2, 3].map((frame) => ({ key: 'zap', frame })), frameRate: 20, repeat: -1 });
 }

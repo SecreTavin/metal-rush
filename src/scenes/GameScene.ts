@@ -23,6 +23,7 @@ import type { Boss } from '../bosses/Boss';
 import { Sentinel } from '../bosses/Sentinel';
 import { Forger } from '../bosses/Forger';
 import { Eye } from '../bosses/Eye';
+import { Worm } from '../bosses/Worm';
 
 type ArcadeImage = Phaser.Physics.Arcade.Image;
 type GameState = 'playing' | 'choosing' | 'gameover' | 'clear';
@@ -40,7 +41,7 @@ const PIT_DAMAGE = 2;
 /** Vida extra dos robôs a cada missão (dificuldade crescente). */
 const ENEMY_HP_PER_MISSION = 0.4;
 /** Vida base dos chefes (cresce um pouco com o número de skills da run). */
-const BOSS_HP = { sentinel: 160, forger: 100, eye: 180 } as const;
+const BOSS_HP = { sentinel: 160, forger: 100, worm: 130, eye: 190 } as const;
 /** Raspberry bumerangue. */
 const PI_SPEED = 380;
 const PI_BRAKE = 520;
@@ -850,12 +851,10 @@ export class GameScene extends Phaser.Scene {
 
   // ---------- Caches de equipamento ----------
 
-  /** Dois caches por missão: um no começo e outro antes da sala de upgrade. */
+  /** Caches por missão: um no começo e um antes de cada sala de upgrade. */
   private placeGearCaches() {
     const rng = mulberry32(this.run.seed + this.run.mission * 7919);
-    const spots = [260];
-    const shrine = this.level.terminals?.[0];
-    if (shrine) spots.push(shrine.x - 110);
+    const spots = [260, ...(this.level.terminals ?? []).map((t) => t.x - 110)];
     for (const x of spots) {
       const id = rollGear(this.run.loadout, rng, 'common', this.gearCaches.map((c) => c.id));
       if (id) this.addGearCache(x, id);
@@ -968,7 +967,7 @@ export class GameScene extends Phaser.Scene {
     const hp = Math.round(BOSS_HP[b.type] * (1 + Object.keys(this.run.skills).length * 0.1));
     this.time.delayedCall(1500, () => {
       if (this.state === 'gameover') return;
-      const Cls = { sentinel: Sentinel, forger: Forger, eye: Eye }[b.type];
+      const Cls = { sentinel: Sentinel, forger: Forger, worm: Worm, eye: Eye }[b.type];
       this.boss = new Cls(this, b.x, hp);
       this.hud.showBoss(this.boss.name);
     });
