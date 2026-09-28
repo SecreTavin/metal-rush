@@ -4,6 +4,7 @@ import { RunState } from '../run/RunState';
 import { loadSave, META_UPGRADES, upgradeLevel, writeSave } from '../run/save';
 import { RARITY_COLOR, SKILLS } from '../run/skills';
 import type { GameInit } from './GameScene';
+import { audio } from '../audio/Audio';
 
 type Item =
   | { kind: 'start' }
@@ -79,6 +80,7 @@ export class LabScene extends Phaser.Scene {
 
     this.refresh();
     this.cameras.main.fadeIn(300);
+    audio.music('lab');
   }
 
   private drawBackground() {
@@ -105,6 +107,7 @@ export class LabScene extends Phaser.Scene {
   }
 
   private move(d: number) {
+    audio.play('select');
     this.index = (this.index + d + this.items.length) % this.items.length;
     this.refresh();
   }
@@ -185,6 +188,7 @@ export class LabScene extends Phaser.Scene {
     save.fragments -= cost;
     writeSave(save);
     this.say('INSTALADO!');
+    audio.play('power');
     this.cameras.main.flash(120, 140, 240, 255);
     this.refresh();
   }
@@ -193,6 +197,9 @@ export class LabScene extends Phaser.Scene {
     this.toast.setText(msg).setColor(bad ? '#ff5a5a' : '#ffcf3a').setAlpha(1);
     this.tweens.killTweensOf(this.toast);
     this.tweens.add({ targets: this.toast, alpha: 0, delay: 900, duration: 300 });
-    if (bad) this.cameras.main.shake(100, 0.004);
+    if (bad) {
+      this.cameras.main.shake(100, 0.004);
+      audio.play('back');
+    }
   }
 }

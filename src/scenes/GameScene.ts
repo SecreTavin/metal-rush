@@ -24,6 +24,7 @@ import { Sentinel } from '../bosses/Sentinel';
 import { Forger } from '../bosses/Forger';
 import { Eye } from '../bosses/Eye';
 import { Worm } from '../bosses/Worm';
+import { audio } from '../audio/Audio';
 
 type ArcadeImage = Phaser.Physics.Arcade.Image;
 type GameState = 'playing' | 'choosing' | 'gameover' | 'clear';
@@ -138,6 +139,15 @@ export class GameScene extends Phaser.Scene {
     this.hud = new Hud(this, this.level.name);
     this.placeGearCaches();
     this.showBanner(this.level.name, this.level.subtitle, 2200);
+    if (this.run.restored) {
+      this.run.restored = false;
+      this.time.delayedCall(900, () => {
+        floatingText(this, this.player.x, this.player.y - 44, 'SAFEPOINT: VIDA RESTAURADA', '#7aff9a');
+        audio.play('heal');
+        this.glitchBars(this.player.x, this.player.y, [0x7aff9a, 0xffffff]);
+      });
+    }
+    audio.music(this.level.theme);
 
     // Melhoria "Boot com Skill": primeira escolha logo no início da run
     if (this.run.bootChoice && this.run.mission === 0) {
@@ -335,6 +345,7 @@ export class GameScene extends Phaser.Scene {
       if (enemy.dying || hits.has(enemy)) return;
       hits.add(enemy);
       enemy.hit(PI_DAMAGE);
+      audio.play('hit');
       impactSpark(this, pi.x, pi.y, 'bolt_hit');
     });
     p.overlap(this.boomerangs, this.bossHurt, (b, z) => {
@@ -359,6 +370,7 @@ export class GameScene extends Phaser.Scene {
       const crit = Math.random() < this.run.stats.critChance;
       if (boss.hit((bullet.getData('damage') as number) * (crit ? 3 : 1), bullet.x, bullet.y, zone)) {
         impactSpark(this, bullet.x, bullet.y, bullet.getData('impact'));
+        audio.play('hit', 0.8);
         if (crit) floatingText(this, bullet.x, bullet.y - 10, 'CRIT!', '#ffcf3a');
       }
       bullet.destroy();
@@ -466,7 +478,10 @@ export class GameScene extends Phaser.Scene {
     });
     if (child) b.setScale(0.7);
     b.setVelocity(Math.cos(angle) * weapon.speed, Math.sin(angle) * weapon.speed);
-    if (primary && !child) muzzleFlash(this, x, y, angle, 'muzzle_code', weapon.bitsTint);
+    if (primary && !child) {
+      muzzleFlash(this, x, y, angle, 'muzzle_code', weapon.bitsTint);
+      audio.play(weapon.fireRate < 100 ? 'shootHeavy' : 'shoot');
+    }
   }
 
   private bulletHitsEnemy(bullet: ArcadeImage, enemy: Enemy) {
@@ -477,6 +492,7 @@ export class GameScene extends Phaser.Scene {
     const crit = Math.random() < this.run.stats.critChance;
     const dmg = (bullet.getData('damage') as number) * (crit ? 3 : 1);
     enemy.hit(dmg);
+    audio.play('hit');
     impactSpark(this, bullet.x, bullet.y, bullet.getData('impact'));
     if (crit) floatingText(this, enemy.x, enemy.y - 34, 'CRIT!', '#ffcf3a');
 
@@ -562,12 +578,14 @@ export class GameScene extends Phaser.Scene {
 
   /** Feixe de teletransporte (volta do buraco). */
   teleportBeam(x: number) {
+    audio.play('teleport');
     const beam = this.add.image(x, 0, 'beam').setOrigin(0.5, 0).setDepth(21).setBlendMode(Phaser.BlendModes.ADD).setScale(0.2, 1);
     this.tweens.add({ targets: beam, scaleX: 1, duration: 150, yoyo: true, hold: 250, onComplete: () => beam.destroy() });
   }
 
   /** Anel de energia do pulo duplo (Sudo Jump). */
   jumpRing(x: number, y: number) {
+    audio.play('jump', 1.4);
     const ring = this.add.sprite(x, y, 'hero_ring').setBlendMode(Phaser.BlendModes.ADD).setDepth(9);
     ring.play('hero_ring');
     this.tweens.add({ targets: ring, scale: 1.8, alpha: 0, y: y + 6, duration: 300, onComplete: () => ring.destroy() });
@@ -575,6 +593,7 @@ export class GameScene extends Phaser.Scene {
 
   /** O escudo Firewall absorveu um golpe. */
   shieldBreak(x: number, y: number) {
+    audio.play('block');
     const s = this.add.image(x, y, 'shield_bubble').setBlendMode(Phaser.BlendModes.ADD).setDepth(12);
     this.tweens.add({ targets: s, scale: 1.8, alpha: 0, duration: 350, onComplete: () => s.destroy() });
     floatingText(this, x, y - 34, 'FIREWALL', '#8ff0ff');
@@ -587,6 +606,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   spawnEnemyBullet(x: number, y: number, angle: number, speed: number) {
+    audio.play('enemyShot');
     const b = this.enemyBullets.create(x, y, 'plasma') as ArcadeImage;
     b.setDepth(8).setRotation(angle).setVelocity(Math.cos(angle) * speed, Math.sin(angle) * speed);
     b.body!.setSize(8, 4);
@@ -601,6 +621,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   clawSlash(x: number, y: number, facing: number) {
+    audio.play('claw');
     const s = this.add.image(x, y, 'claw_slash').setFlipX(facing < 0).setDepth(12).setBlendMode(Phaser.BlendModes.ADD);
     this.tweens.add({ targets: s, alpha: 0, duration: 180, onComplete: () => s.destroy() });
   }
@@ -659,9 +680,11 @@ export class GameScene extends Phaser.Scene {
     if (l.getData('kind') === 'heal') {
       if (this.run.hp >= this.run.maxHp) return;
       this.run.heal(1);
+      audio.play('heal');
       floatingText(this, l.x, l.y - 10, '+1 HP', '#7aff9a');
     } else {
       this.run.fragments += this.run.fragmentValue(1);
+      audio.play('coin');
     }
     l.destroy();
   }
@@ -679,6 +702,7 @@ export class GameScene extends Phaser.Scene {
         t.prompt.destroy();
         t.img.setFrame(1);
         (t.img.getData('glow') as Phaser.GameObjects.Image).destroy();
+        audio.play('confirm');
         this.openSkillChoice();
       }
     }
@@ -723,6 +747,7 @@ export class GameScene extends Phaser.Scene {
 
   private explodeGrenade(g: ArcadeImage) {
     if (!g.active) return;
+    audio.play('emp');
     const { x, y } = g;
     g.destroy();
     this.empAt(x, y);
@@ -807,6 +832,7 @@ export class GameScene extends Phaser.Scene {
     pi.setDepth(12).setVelocity(facing * PI_SPEED, 0).setAngularVelocity(facing * 900).setBounce(1);
     pi.body!.setSize(14, 10);
     pi.setData({ phase: 'out', facing, hits: new Set(), born: this.time.now });
+    audio.play('throw');
   }
 
   private boomerangBounce(pi: ArcadeImage) {
@@ -906,6 +932,7 @@ export class GameScene extends Phaser.Scene {
       const near = Math.abs(p.x - c.x) < 20 && p.body.bottom > GROUND_Y - 44;
       c.prompt.setVisible(near);
       if (near && this.controls.justDown('up')) {
+        audio.play('confirm');
         this.openGearOffer(c);
         return;
       }
@@ -944,6 +971,7 @@ export class GameScene extends Phaser.Scene {
     }
     const x = cache.x;
     this.removeGearCache(cache);
+    audio.play('pickup');
     floatingText(this, this.player.x, this.player.y - 40, def.name, GEAR_RARITY_COLOR[def.rarity]);
     this.glitchBars(this.player.x, this.player.y, [0x8ff0ff, 0xffffff]);
     if (old) this.addGearCache(x, old);
@@ -962,6 +990,8 @@ export class GameScene extends Phaser.Scene {
     this.bossStarted = true;
     this.cameraLock = b.x;
     this.events.emit('boss-start', b.type);
+    audio.play('alarm');
+    audio.music('boss');
     this.cameras.main.flash(250, 255, 40, 40);
     this.showBanner('PERIGO!', 'CHEFE SE APROXIMANDO', 1300, '#ff3a3a');
     const hp = Math.round(BOSS_HP[b.type] * (1 + Object.keys(this.run.skills).length * 0.1));
@@ -975,6 +1005,8 @@ export class GameScene extends Phaser.Scene {
 
   /** Chefe destruído: libera a câmera, solta fragmentos e abre um terminal de upgrade. */
   bossDefeated(boss: Boss, x: number, y: number) {
+    audio.music(null);
+    audio.play('win');
     this.hud.hideBoss();
     this.boss = null;
     this.cameraLock = null;
@@ -1020,6 +1052,7 @@ export class GameScene extends Phaser.Scene {
       floatingText(this, crate.x, crate.y - 16, 'PENDRIVES +5', '#9fd0ff');
     }
     this.addScore(500, crate.x, crate.y);
+    audio.play('pickup');
     crate.destroy();
   }
 
@@ -1037,6 +1070,8 @@ export class GameScene extends Phaser.Scene {
 
   private missionClear() {
     this.state = 'clear';
+    audio.music(null);
+    audio.play('win');
     this.physics.pause();
     this.player.anims.play('hero-idle');
     this.run.score += 5000;
@@ -1045,7 +1080,7 @@ export class GameScene extends Phaser.Scene {
       this.run.bank(true);
       this.showSummary('O MUNDO FOI SALVO!', '#7aff9a');
     } else {
-      this.showBanner('MISSÃO CUMPRIDA!', 'ENTER: PROXIMA MISSÃO');
+      this.showBanner('MISSÃO CUMPRIDA!', 'SAFEPOINT: VIDA CHEIA NA PROXIMA MISSÃO\n\nENTER: PROXIMA MISSÃO');
     }
   }
 
@@ -1053,6 +1088,8 @@ export class GameScene extends Phaser.Scene {
   private runOver() {
     if (this.state === 'gameover') return;
     this.state = 'gameover';
+    audio.music(null);
+    audio.play('lose');
     this.time.delayedCall(1200, () => {
       this.physics.pause();
       this.run.bank(false);
@@ -1099,6 +1136,9 @@ export class GameScene extends Phaser.Scene {
     const last = this.run.mission >= MISSION_COUNT - 1;
     if (this.state === 'clear' && !last) {
       this.run.mission++;
+      // Safepoint: chefe vencido = próxima missão começa com a vida cheia
+      this.run.hp = this.run.maxHp;
+      this.run.restored = true;
       this.scene.restart({ run: this.run } satisfies GameInit);
     } else {
       this.scene.start('Lab');
@@ -1116,8 +1156,8 @@ export class GameScene extends Phaser.Scene {
       .setScrollFactor(0)
       .setDepth(200);
     const t2 = this.add
-      .text(cx, cy + 24, subtitle, { fontFamily: FONT, fontSize: '8px', color: '#ffffff' })
-      .setOrigin(0.5)
+      .text(cx, cy + 24, subtitle, { fontFamily: FONT, fontSize: '8px', color: '#ffffff', align: 'center' })
+      .setOrigin(0.5, 0)
       .setStroke('#000000', 3)
       .setScrollFactor(0)
       .setDepth(200);

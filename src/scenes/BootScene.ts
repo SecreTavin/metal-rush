@@ -4,6 +4,7 @@ import { createHeroAnimations, generateHeroFx } from '../gfx/art/heroFx';
 import { createEnemyAnimations, generateEnemyFx } from '../gfx/art/enemyFx';
 import { generateRunArt } from '../run/art';
 import { generateBossArt } from '../bosses/art';
+import { audio } from '../audio/Audio';
 
 export class BootScene extends Phaser.Scene {
   constructor() {
@@ -37,6 +38,7 @@ export class BootScene extends Phaser.Scene {
     createEnemyAnimations(this);
     generateRunArt(this);
     generateBossArt(this);
+    audio.init(this.game);
     this.scene.start('Menu');
   }
 }

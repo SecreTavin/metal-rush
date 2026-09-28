@@ -27,9 +27,20 @@ Abra http://localhost:5173. Use `?debug` na URL para ver as caixas de colisão.
 | Usar terminal de upgrade / pegar item | Cima |
 | Esquiva (skill Rollback) | Shift / I |
 
+Esses são os atalhos padrão: em **Opções > Atalhos do controle** dá para trocar cada ação por qualquer
+tecla ou botão do mouse (até 3 por ação). Em **Opções** também ficam os volumes (geral, música e efeitos)
+e a tela cheia. As configurações ficam salvas no navegador.
+
+## Som
+
+Todo o áudio é **sintetizado em tempo real** (Web Audio), sem arquivos: efeitos para tiros, golpes,
+explosões, itens e chefes, e uma trilha synthwave/chiptune para cada tela e missão (e outra para os
+chefes), tocada por um pequeno sequenciador em `src/audio/Audio.ts`.
+
 ## Como funciona (Metal Slug + Dead Cells)
 
 Cada partida é uma **run**: você atravessa as 4 missões seguidas, cada uma terminando num **chefe**.
+Vencer um chefe é um **safepoint**: a próxima missão começa com a vida cheia.
 Morreu, a run acaba e você volta ao **Laboratório** — mas os fragmentos coletados ficam.
 
 - **Vida (HP)**: o herói aguenta alguns golpes; buracos custam 2 de vida.
@@ -115,6 +126,7 @@ src/
   scenes/
     BootScene.ts        carrega sprites, gera texturas e animações
     MenuScene.ts        tela de título
+    OptionsScene.ts     opções: volumes, tela cheia e atalhos
     LabScene.ts         Laboratório (melhorias e skills entre runs)
     GameScene.ts        gameplay: câmera, colisões, run, chefes
   level/

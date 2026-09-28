@@ -4,6 +4,7 @@ import type { Action, Controls } from '../input/Controls';
 import { Arsenal } from './Arsenal';
 import { WEAPONS, WeaponDef, WeaponKey } from './weapons';
 import { HERO_BOB } from '../gfx/art/heroFx';
+import { audio } from '../audio/Audio';
 
 const SPEED = 110;
 const JUMP_VELOCITY = -360;
@@ -112,6 +113,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       this.body.setAllowGravity(false);
       this.setVelocityY(0);
       this.gs.dust(this.x - this.facing * 8, this.body.bottom, 0.8);
+      audio.play('dash');
     }
     if (dashing) {
       this.setVelocityX(this.facing * DASH_SPEED);
@@ -136,6 +138,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         this.setVelocityY(JUMP_VELOCITY);
         this.jumpsLeft = this.stats.doubleJump ? 1 : 0;
         this.gs.dust(this.x, feet, 0.8);
+        audio.play('jump');
       } else if (this.jumpsLeft > 0 && this.stats.doubleJump) {
         // pulo duplo: pequeno anel de energia sob os pés
         this.jumpsLeft = 0;
@@ -247,6 +250,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       if (target) {
         this.meleeStart = time;
         this.gs.meleeSlash(this.x + this.facing * 18, this.y - 4, this.facing);
+        audio.play('swing');
         target.hit(3 * s.meleeMul);
         return;
       }
@@ -281,6 +285,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private bash(time: number) {
     const s = this.stats;
     this.nextSecondary = time + BASH_COOLDOWN;
+    audio.play('swing');
     this.meleeStart = time;
     this.gs.meleeSlash(this.x + this.facing * 18, this.y - 4, this.facing);
     const range = s.meleeRange + 12;
@@ -349,6 +354,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     }
     const run = this.gs.run;
     run.hp = Math.max(0, run.hp - amount);
+    audio.play('hurt');
     this.invulnerableUntil = time + HURT_INVULNERABILITY;
     const away = fromX === undefined ? -this.facing : Math.sign(this.x - fromX) || -this.facing;
     this.setVelocity(away * 140, -200);

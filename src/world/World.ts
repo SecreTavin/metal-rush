@@ -8,6 +8,7 @@ import type {
 import type { GameScene } from '../scenes/GameScene';
 import { DEPTH, Theme } from '../themes/Theme';
 import { NEON_WORDS } from './art';
+import { audio } from '../audio/Audio';
 
 type Img = Phaser.Physics.Arcade.Image;
 type Body = Phaser.Physics.Arcade.Body;
@@ -239,6 +240,7 @@ export class World {
 
   /** Poça temporária de vírus (Infectado destruído, cuspe da Verme-Mãe). */
   spawnOoze(x: number, w: number, duration: number) {
+    audio.play('splat');
     const def = { type: 'ooze' as const, x: x - w / 2, w };
     const h = this.makeOoze(def, duration);
     this.hazards.push(h);
@@ -285,6 +287,7 @@ export class World {
         if (t >= 0.76 && !slammed) {
           slammed = true;
           if (this.onScreen(def.x)) {
+            audio.play('explodeSmall', 0.6);
             gs.cameras.main.shake(90, 0.006);
             gs.dust(def.x - 18, GROUND_Y, 1);
             gs.dust(def.x + 18, GROUND_Y, 1);
@@ -488,6 +491,7 @@ export class World {
         if (out > 0.4 && !burst) {
           burst = true;
           if (this.onScreen(def.x)) {
+            audio.play('rumble');
             gs.dust(def.x - 8, GROUND_Y, 0.9);
             gs.dust(def.x + 8, GROUND_Y, 0.9);
             gs.cameras.main.shake(80, 0.004);
@@ -827,6 +831,7 @@ export class World {
         gs.showBanner('ALERTA!', 'SISTEMA DE DEFESA ATIVADO', 1200, '#ff3a3a');
         gs.cameras.main.flash(200, 255, 40, 40);
         this.setAlarm(true);
+        audio.play('alarm');
       }
       if (a.state !== 'active') continue;
       a.alive = a.alive.filter((e) => e.active && !e.dying);

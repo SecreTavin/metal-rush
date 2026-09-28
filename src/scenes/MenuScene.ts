@@ -6,6 +6,9 @@ import { RunState } from '../run/RunState';
 import { loadSave } from '../run/save';
 import { EYE_R, generateMenuArt, LOGO_M, ROOF_X, ROOF_Y } from '../gfx/art/menuArt';
 import { HERO_BOB } from '../gfx/art/heroFx';
+import { Action, bindingLabel } from '../input/Controls';
+import { loadSettings } from '../run/settings';
+import { audio } from '../audio/Audio';
 
 const EYE = { x: 372, y: 80 };
 const LOGO_POS = { x: 16, y: 18 };
@@ -35,16 +38,18 @@ const D = {
 
 type Item = { label: string; action: () => void };
 
-const CONTROLS = [
-  ['MOVER', 'SETAS / WASD'],
-  ['MIRAR', 'CIMA / BAIXO NO AR'],
-  ['ARMA 1', 'CLIQUE ESQ / J / Z'],
-  ['ARMA 2', 'CLIQUE DIR / U / V'],
-  ['PULAR', 'K / X / ESPAÇO'],
-  ['GRANADA', 'L / C'],
-  ['SKILLS', 'Q / E'],
-  ['ESQUIVA', 'SHIFT / I'],
-  ['TERMINAL / ITEM', 'CIMA'],
+/** Linhas do painel de controles (os atalhos vêm das configurações do jogador). */
+const CONTROLS: [string, Action[]][] = [
+  ['ESQUERDA', ['left']],
+  ['DIREITA', ['right']],
+  ['MIRAR', ['up']],
+  ['ARMA 1', ['primary']],
+  ['ARMA 2', ['secondary']],
+  ['PULAR', ['jump']],
+  ['GRANADA', ['grenade']],
+  ['SKILL 1', ['skill1']],
+  ['SKILL 2', ['skill2']],
+  ['ESQUIVA', ['dash']],
 ];
 
 /**
@@ -99,6 +104,7 @@ export class MenuScene extends Phaser.Scene {
     this.scheduleLightning();
     this.scheduleEyePulse();
     this.cameras.main.fadeIn(400);
+    audio.music('menu');
   }
 
   // ---------------------------------------------------------------- cena
@@ -226,7 +232,7 @@ export class MenuScene extends Phaser.Scene {
       { label: 'INICIAR RUN', action: () => this.leave('Game', { run: new RunState() } satisfies GameInit) },
       { label: 'LABORATORIO', action: () => this.leave('Lab') },
       { label: 'CONTROLES', action: () => this.openControls() },
-      { label: 'OPCOES', action: () => this.openOptions() },
+      { label: 'OPCOES', action: () => this.leave('Options') },
     ];
     this.items.forEach((it, i) => {
       const y = 138 + i * 17;
@@ -271,6 +277,7 @@ export class MenuScene extends Phaser.Scene {
       r.mark.setVisible(sel);
     });
     if (changed && !silent) {
+      audio.play('select');
       this.pump(0.35, 0x8ff0ff);
       const t = this.rows[i].text;
       this.tweens.add({ targets: t, x: { from: 46, to: 42 }, duration: 120 });
@@ -280,6 +287,7 @@ export class MenuScene extends Phaser.Scene {
   private confirm() {
     if (this.leaving || this.overlay) return;
     this.pump(1.2, 0xffcf3a);
+    audio.play('confirm');
     this.items[this.index].action();
   }
 
@@ -313,20 +321,21 @@ export class MenuScene extends Phaser.Scene {
   }
 
   private openControls() {
-    const width = 17;
-    this.panel(
-      'CONTROLES',
-      CONTROLS.map(([a, k]) => `${a} ${'.'.repeat(Math.max(2, width - a.length))} ${k}`),
-    );
-  }
-
-  private openOptions() {
-    this.panel('OPCOES', ['EM BREVE:', '', '- TROCAR TECLAS (ATALHOS)', '- VOLUME', '- TELA CHEIA'], '#8ff0ff');
+    const width = 15;
+    const b = loadSettings().bindings;
+    const keys = (a: Action) => (b[a] ?? []).slice(0, 2).map(bindingLabel).join(' / ') || '---';
+    const lines = CONTROLS.map(([label, actions]) => {
+      const k = actions.map(keys).join('  ');
+      return `${label} ${'.'.repeat(Math.max(2, width - label.length))} ${k}`;
+    });
+    lines.push('', 'TROQUE EM OPCOES > ATALHOS');
+    this.panel('CONTROLES', lines);
   }
 
   private closeOverlay() {
     const o = this.overlay;
     if (!o) return;
+    audio.play('back');
     // espera o clique/tecla terminar antes de reabilitar o menu
     this.time.delayedCall(60, () => (this.overlay = null));
     this.tweens.add({ targets: o, alpha: 0, duration: 120, onComplete: () => o.destroy() });
@@ -409,7 +418,10 @@ export class MenuScene extends Phaser.Scene {
       });
     }
     this.pump(0.5, 0xffffff);
-    this.time.delayedCall(Phaser.Math.Between(250, 600), () => this.cameras.main.shake(260, 0.003));
+    this.time.delayedCall(Phaser.Math.Between(250, 600), () => {
+      this.cameras.main.shake(260, 0.003);
+      audio.play('thunder');
+    });
   }
 
   /** O olho da IA pulsa: onda de choque vermelha e a tela treme. */
@@ -430,6 +442,7 @@ export class MenuScene extends Phaser.Scene {
     const tint = this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0xff1a3a, 0.14).setOrigin(0).setDepth(D.rain + 0.5).setBlendMode(Phaser.BlendModes.ADD);
     this.tweens.add({ targets: tint, alpha: 0, duration: 450, onComplete: () => tint.destroy() });
     this.cameras.main.shake(280, 0.007);
+    audio.play('pulse');
     this.pump(0.9, 0xff5aff);
   }
 

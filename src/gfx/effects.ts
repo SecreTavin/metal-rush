@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { FONT } from '../config';
+import { audio } from '../audio/Audio';
 
 /** Toca uma animação de efeito uma vez e remove o sprite no fim. */
 function playOnce(scene: Phaser.Scene, x: number, y: number, anim: string, depth: number) {
@@ -10,6 +11,7 @@ function playOnce(scene: Phaser.Scene, x: number, y: number, anim: string, depth
 }
 
 export function explosion(scene: Phaser.Scene, x: number, y: number, size = 1) {
+  audio.play(size >= 1 ? 'explode' : 'explodeSmall');
   playOnce(scene, x, y - 12 * size, 'boom', 20).setScale(size);
   const debris = scene.add
     .particles(x, y, 'fx_spark', {

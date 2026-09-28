@@ -19,6 +19,8 @@ export class RunState {
   score = 0;
   kills = 0;
   timeMs = 0;
+  /** A vida acabou de ser restaurada pelo safepoint (mostra o aviso na próxima missão). */
+  restored = false;
   /** Skill inicial ainda a escolher (melhoria "Boot com Skill"). */
   bootChoice: boolean;
   private statsCache: SkillStats | null = null;

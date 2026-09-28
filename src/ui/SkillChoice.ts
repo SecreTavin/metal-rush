@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { FONT, GAME_HEIGHT, GAME_WIDTH } from '../config';
 import { RARITY_COLOR, SkillDef } from '../run/skills';
+import { audio } from '../audio/Audio';
 
 const CARD_W = 136;
 const CARD_H = 150;
@@ -119,6 +120,7 @@ export class SkillChoice {
   private move(d: number) {
     if (this.closed) return;
     this.index = (this.index + d + this.options.length) % this.options.length;
+    audio.play('select');
     this.refresh();
   }
 
@@ -137,6 +139,7 @@ export class SkillChoice {
   private confirm() {
     if (this.closed || this.scene.time.now < this.readyAt) return;
     this.closed = true;
+    audio.play('power');
     const skill = this.options[this.index];
     const chosen = this.cards[this.index];
     this.scene.tweens.add({ targets: chosen, scale: 1.2, duration: 160, yoyo: true });

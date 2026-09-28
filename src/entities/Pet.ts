@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import type { GameScene } from '../scenes/GameScene';
 import type { Enemy } from './Enemy';
 import { impactSpark } from '../gfx/effects';
+import { audio } from '../audio/Audio';
 
 const SIGHT = 160;
 const FOLLOW_SPEED = 150;
@@ -95,6 +96,7 @@ export class Pet extends Phaser.GameObjects.Sprite {
   private bite(target: Target, time: number) {
     this.nextBite = time + BITE_COOLDOWN;
     impactSpark(this.gs, this.x + (this.flipX ? -8 : 8), this.y, 'bolt_hit');
+    audio.play('claw', 1.5);
     if (target.kind === 'enemy') target.enemy.hit(BITE_DAMAGE);
     else this.gs.boss?.hit(BITE_DAMAGE, this.x, this.y, target.zone);
     // pulinho da mordida

@@ -7,6 +7,7 @@ import { Pet } from './Pet';
 import { ABILITY_TIMES, AbilityId, GEAR } from '../run/gear';
 import { floatingText, impactSpark } from '../gfx/effects';
 import { HERO_BOB } from '../gfx/art/heroFx';
+import { audio } from '../audio/Audio';
 
 // ---- Escudo 144Hz
 const SHIELD_HITS = 5;
@@ -163,6 +164,7 @@ export class Arsenal {
   }
 
   registerBlock(time: number) {
+    audio.play('block');
     this.shieldFlashUntil = time + 90;
     this.shieldHits++;
     const p = this.player;
@@ -170,6 +172,7 @@ export class Arsenal {
     if (this.shieldHits >= SHIELD_HITS) {
       this.shieldHits = 0;
       this.shieldCooldownUntil = time + SHIELD_COOLDOWN;
+      audio.play('shieldBreak');
       this.blocking = false;
       this.gs.glitchBars(p.x + p.facing * 20, p.y - 4, [0x7a3aff, 0x1fb8ff, 0xffffff]);
       floatingText(this.gs, p.x, p.y - 40, 'TELA RACHOU!', '#ff5a5a');
@@ -183,6 +186,7 @@ export class Arsenal {
     this.whipStart = time;
     this.nextWhip = time + WHIP_COOLDOWN;
     this.whipDealt = false;
+    audio.play('whip');
   }
 
   /** Chicotada: acerta tudo na linha; a ponta (perfeita) causa mais dano. */
@@ -214,6 +218,7 @@ export class Arsenal {
       }
     }
     this.gs.world.explosionAt(hand.x + f * WHIP_REACH, hand.y, 8);
+    audio.play(perfect ? 'crack' : 'swing');
     if (perfect) {
       floatingText(this.gs, hand.x + f * WHIP_REACH, hand.y - 14, 'PERFEITO!', '#ffcf3a');
       this.gs.cameras.main.shake(60, 0.003);
@@ -234,6 +239,7 @@ export class Arsenal {
     this.activeUntil[slot] = time + t.duration;
     this.readyAt[slot] = time + t.duration + t.cooldown;
     floatingText(this.gs, p.x, p.y - 44, GEAR[id].name + '!', '#ffcf3a');
+    audio.play('power');
     if (id === 'morph') {
       this.morphUntil = time + t.duration;
       this.gs.cameras.main.flash(160, 255, 220, 120);

@@ -4,6 +4,7 @@ import { makeTexture, mulberry32, pick, rand, randInt, RNG, wrapX } from '../gfx
 import type { BlockKind, LevelData } from '../level/types';
 import { cable, glow, graffiti, neonSign, pixelText, vgrad, windows } from './draw';
 import { addLayer, DEPTH, layerWidth, onUpdate, PARALLAX, Theme } from './Theme';
+import { audio } from '../audio/Audio';
 
 /*
  * MISSÃO 1 — Ruínas de Neo-SP.
@@ -1299,7 +1300,10 @@ export const cityTheme: Theme = {
       bolt.setAlpha(1);
       flash.setAlpha(0.5);
       gs.tweens.add({ targets: [flash, bolt], alpha: 0, duration: 90, yoyo: true, repeat: 1, onComplete: () => { flash.setAlpha(0); bolt.setAlpha(0); } });
-      gs.time.delayedCall(Phaser.Math.Between(400, 900), () => gs.cameras.main.shake(260, 0.003));
+      gs.time.delayedCall(Phaser.Math.Between(400, 900), () => {
+        gs.cameras.main.shake(260, 0.003);
+        audio.play('thunder');
+      });
       gs.time.delayedCall(Phaser.Math.Between(5000, 11000), strike);
     };
     gs.time.delayedCall(4000, strike);

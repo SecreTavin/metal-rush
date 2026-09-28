@@ -3,17 +3,27 @@ import { FONT, GAME_HEIGHT, GAME_WIDTH } from '../config';
 import type { GameScene } from '../scenes/GameScene';
 import { RARITY_COLOR, SKILL_BY_ID } from '../run/skills';
 import { GEAR, GEAR_RARITY_COLOR, GearId } from '../run/gear';
+import { Action, bindingLabel } from '../input/Controls';
+import { loadSettings } from '../run/settings';
 
 const DEPTH = 100;
 const SLOT = 24;
 /** Barra de equipamento: arma 1, arma 2, granada, skill Q, skill E. */
-const GEAR_SLOTS = [
+const GEAR_SLOTS: { label: string; x: number; action?: Action }[] = [
   { label: '1', x: 6 },
   { label: '2', x: 32 },
-  { label: 'L', x: 64 },
-  { label: 'Q', x: 96 },
-  { label: 'E', x: 122 },
+  { label: 'L', x: 64, action: 'grenade' },
+  { label: 'Q', x: 96, action: 'skill1' },
+  { label: 'E', x: 122, action: 'skill2' },
 ];
+
+/** Tecla atual da ação (se couber no canto do slot), senão o rótulo padrão. */
+function slotLabel(slot: (typeof GEAR_SLOTS)[number]) {
+  if (!slot.action) return slot.label;
+  const key = loadSettings().bindings[slot.action]?.find((b) => b.kind === 'key');
+  const name = bindingLabel(key);
+  return key && name.length <= 2 ? name : slot.label;
+}
 const GEAR_Y = GAME_HEIGHT - 44;
 
 /**
@@ -62,7 +72,7 @@ export class Hud {
     // Equipamento (rodapé esquerdo)
     this.gearGfx = fixed(gs.add.graphics());
     GEAR_SLOTS.forEach((s) => {
-      text(s.x + SLOT - 7, GEAR_Y + SLOT - 8, 8, '#6a6488').setText(s.label).setDepth(DEPTH + 1);
+      text(s.x + SLOT - 7, GEAR_Y + SLOT - 8, 8, '#6a6488').setText(slotLabel(s)).setDepth(DEPTH + 1);
       this.gearTexts.push(text(s.x + SLOT / 2, GEAR_Y + 8, 8, '#ffffff').setOrigin(0.5, 0).setDepth(DEPTH + 1));
     });
 

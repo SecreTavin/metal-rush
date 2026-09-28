@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { loadSettings } from '../run/settings';
 
 export type Action = 'left' | 'right' | 'up' | 'down' | 'primary' | 'secondary' | 'jump' | 'grenade' | 'dash' | 'skill1' | 'skill2';
 
@@ -11,8 +12,8 @@ const key = (code: string): Binding => ({ kind: 'key', code });
 const mouse = (button: MouseButton): Binding => ({ kind: 'mouse', button });
 
 /**
- * Atalhos padrão. Uma futura tela de configuração só precisa editar uma cópia
- * desta tabela e passá-la para `new Controls(scene, bindings)`.
+ * Atalhos padrão. A tela de Opções edita uma cópia desta tabela (salva em settings.ts),
+ * que é usada por `new Controls(scene)`.
  */
 export const DEFAULT_BINDINGS: Record<Action, Binding[]> = {
   left: [key('LEFT'), key('A')],
@@ -30,6 +31,55 @@ export const DEFAULT_BINDINGS: Record<Action, Binding[]> = {
 
 const BUTTON_INDEX: Record<MouseButton, number> = { left: 0, middle: 1, right: 2 };
 
+/** Ações na ordem em que aparecem na tela de atalhos, com o nome exibido. */
+export const ACTION_LABELS: [Action, string][] = [
+  ['left', 'ESQUERDA'],
+  ['right', 'DIREITA'],
+  ['up', 'CIMA / MIRAR'],
+  ['down', 'BAIXO'],
+  ['jump', 'PULAR'],
+  ['primary', 'ARMA 1'],
+  ['secondary', 'ARMA 2'],
+  ['grenade', 'GRANADA'],
+  ['skill1', 'SKILL 1'],
+  ['skill2', 'SKILL 2'],
+  ['dash', 'ESQUIVA'],
+];
+
+/** Teclas que não podem ser atribuídas (ESC cancela e volta nos menus). */
+export const RESERVED_KEYS = new Set(['ESC']);
+
+const KEY_NAMES: Record<string, string> = {
+  LEFT: 'SETA ESQ', RIGHT: 'SETA DIR', UP: 'SETA CIMA', DOWN: 'SETA BAIXO', SPACE: 'ESPAÇO',
+  ENTER: 'ENTER', SHIFT: 'SHIFT', CTRL: 'CTRL', ALT: 'ALT', TAB: 'TAB', BACKSPACE: 'APAGAR',
+  ZERO: '0', ONE: '1', TWO: '2', THREE: '3', FOUR: '4', FIVE: '5', SIX: '6', SEVEN: '7', EIGHT: '8', NINE: '9',
+  COMMA: ',', PERIOD: '.', SEMICOLON: 'Ç / ;', FORWARD_SLASH: '/', BACK_SLASH: '\\', MINUS: '-', PLUS: '=',
+  OPEN_BRACKET: '[', CLOSED_BRACKET: ']', QUOTES: "'", BACKTICK: '`', CAPS_LOCK: 'CAPS',
+};
+const MOUSE_NAMES: Record<MouseButton, string> = { left: 'CLIQUE ESQ', right: 'CLIQUE DIR', middle: 'CLIQUE MEIO' };
+
+/** Nome curto de um atalho para exibir na tela. */
+export function bindingLabel(b: Binding | undefined) {
+  if (!b) return '---';
+  if (b.kind === 'mouse') return MOUSE_NAMES[b.button];
+  return KEY_NAMES[b.code] ?? b.code.replace('NUMPAD_', 'NUM ').replace('_', ' ');
+}
+
+/** Nome do Phaser (KeyCodes) para um keyCode do navegador. */
+export function keyNameFromCode(keyCode: number): string | null {
+  const codes = Phaser.Input.Keyboard.KeyCodes as unknown as Record<string, number>;
+  const found = Object.keys(codes).find((k) => codes[k] === keyCode);
+  return found ?? null;
+}
+
+/** Botão do mouse (índice do evento) como MouseButton. */
+export function mouseButtonFromIndex(i: number): MouseButton | null {
+  return i === 0 ? 'left' : i === 1 ? 'middle' : i === 2 ? 'right' : null;
+}
+
+export const sameBinding = (a: Binding, b: Binding) =>
+  a.kind === b.kind && (a.kind === 'key' ? a.code === (b as typeof a).code : a.button === (b as typeof a).button);
+
 /**
  * Camada de entrada: o jogo só pergunta por ações, nunca por teclas ou botões.
  * Chame `update()` uma vez por quadro, antes de ler as ações.
@@ -42,14 +92,15 @@ export class Controls {
   private clickedThisFrame = new Set<number>();
   private pointer: Phaser.Input.Pointer;
 
-  constructor(scene: Phaser.Scene, bindings: Record<Action, Binding[]> = DEFAULT_BINDINGS) {
+  constructor(scene: Phaser.Scene, bindings: Record<Action, Binding[]> = loadSettings().bindings) {
     const kb = scene.input.keyboard!;
     this.pointer = scene.input.activePointer;
     this.keys = {} as Record<Action, Phaser.Input.Keyboard.Key[]>;
     this.mouse = {} as Record<Action, number[]>;
-    for (const action of Object.keys(bindings) as Action[]) {
-      this.keys[action] = bindings[action].flatMap((b) => (b.kind === 'key' ? [kb.addKey(b.code)] : []));
-      this.mouse[action] = bindings[action].flatMap((b) => (b.kind === 'mouse' ? [BUTTON_INDEX[b.button]] : []));
+    for (const action of Object.keys(DEFAULT_BINDINGS) as Action[]) {
+      const list = bindings[action] ?? [];
+      this.keys[action] = list.flatMap((b) => (b.kind === 'key' ? [kb.addKey(b.code)] : []));
+      this.mouse[action] = list.flatMap((b) => (b.kind === 'mouse' ? [BUTTON_INDEX[b.button]] : []));
     }
     const onDown = (p: Phaser.Input.Pointer) => this.pendingClicks.add(p.button);
     scene.input.on(Phaser.Input.Events.POINTER_DOWN, onDown);

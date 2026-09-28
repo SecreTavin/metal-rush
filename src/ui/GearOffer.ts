@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { FONT, GAME_HEIGHT, GAME_WIDTH } from '../config';
 import { GEAR, GEAR_RARITY_COLOR, GEAR_RARITY_LABEL, GearId, Loadout } from '../run/gear';
+import { audio } from '../audio/Audio';
 
 const DEPTH = 300;
 const PANEL_W = 300;
@@ -118,6 +119,7 @@ export class GearOffer {
   private move(d: number) {
     if (this.closed) return;
     this.index = (this.index + d + this.rows.length) % this.rows.length;
+    audio.play('select');
     this.refresh();
   }
 
@@ -136,6 +138,7 @@ export class GearOffer {
   private close(slot: number | null) {
     if (this.closed) return;
     this.closed = true;
+    audio.play(slot === null ? 'back' : 'confirm');
     for (const k of this.keys) k.removeAllListeners();
     this.scene.tweens.add({
       targets: this.root,

@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { explosion, floatingText, impactSpark } from '../gfx/effects';
 import type { GameScene } from '../scenes/GameScene';
+import { audio } from '../audio/Audio';
 
 export type HurtZone = Phaser.GameObjects.Zone & { body: Phaser.Physics.Arcade.Body };
 
@@ -70,6 +71,7 @@ export abstract class Boss {
       this.phase2 = true;
       this.gs.cameras.main.flash(150, 255, 60, 60);
       floatingText(this.gs, x, y - 20, 'FASE 2', '#ff5a5a');
+      audio.play('roar');
       this.onPhase2();
     }
     if (this.hp <= 0) this.die();

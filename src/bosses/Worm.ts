@@ -3,6 +3,7 @@ import { GAME_WIDTH, GROUND_Y } from '../config';
 import type { GameScene } from '../scenes/GameScene';
 import { DEPTH } from '../themes/Theme';
 import { Boss, HurtZone } from './Boss';
+import { audio } from '../audio/Audio';
 
 type Img = Phaser.GameObjects.Image;
 type Point = { x: number; y: number };
@@ -217,6 +218,7 @@ export class Worm extends Boss {
     this.crack.setPosition(x, GROUND_Y - 2).setAlpha(1);
     const blink = gs.tweens.add({ targets: this.crack, alpha: 0.25, duration: 90, yoyo: true, repeat: -1 });
     gs.cameras.main.shake(ms, 0.0025);
+    audio.play('rumble');
     const dust = gs.time.addEvent({ delay: 160, repeat: Math.floor(ms / 160), callback: () => gs.dust(x + Phaser.Math.Between(-24, 24), GROUND_Y, 0.7) });
     gs.time.delayedCall(ms * (this.phase2 ? 0.7 : 1), () => {
       blink.stop();
@@ -296,6 +298,7 @@ export class Worm extends Boss {
     const vy = (GROUND_Y - my - 0.5 * g * t * t) / t;
     const img = gs.add.image(mx, my, 'worm_glob').setDepth(DEPTH.hazardFront);
     this.globs.push({ img, vx, vy });
+    audio.play('enemyShot', 0.6);
     gs.emitBits(mx, my, 0x5aff5a);
   }
 
@@ -322,6 +325,7 @@ export class Worm extends Boss {
 
   /** Rugido: tela treme, mandíbulas abertas. */
   private roar() {
+    audio.play('roar');
     this.jawOpen = 1;
     this.gs.cameras.main.shake(500, 0.01);
     this.gs.glitchBars(this.head.x, this.head.y, [0x5aff5a, 0xffffff]);
