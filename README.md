@@ -2,7 +2,7 @@
 
 Jogo run-and-gun 2D no estilo Metal Slug, feito com **Phaser 3 + TypeScript + Vite** e publicado no **Cloudflare**.
 
-**Jogar agora:** https://metal-rush.metal-rush.workers.dev
+**Jogar agora:** https://metal-rush.secretavin.workers.dev
 
 ## Rodando localmente
 
